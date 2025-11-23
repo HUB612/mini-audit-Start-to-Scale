@@ -1,0 +1,17 @@
+thematic: "Organisation"
+questions:
+  - text: "Avez-vous une structure organisationnelle claire avec des rôles et responsabilités définis ?"
+    description: "Organigramme, fiches de poste, processus décisionnels. Essentiel pour une organisation efficace."
+  
+  - text: "Avez-vous mis en place des processus de recrutement structurés ?"
+    description: "Processus de recrutement avec critères, méthodes d'évaluation et onboarding. Essentiel pour recruter les bons profils."
+  
+  - text: "Avez-vous un système de gestion des connaissances et de documentation interne ?"
+    description: "Documentation des processus, connaissances, décisions. Essentiel pour la continuité et la montée en compétences."
+  
+  - text: "Avez-vous défini une culture d'entreprise et des valeurs partagées ?"
+    description: "Culture d'entreprise claire, valeurs, vision. Essentiel pour aligner l'équipe et attirer les bons talents."
+  
+  - text: "Avez-vous mis en place des outils de collaboration et de communication efficaces ?"
+    description: "Outils pour la collaboration, communication interne, gestion de projet. Essentiel pour la productivité de l'équipe."
+

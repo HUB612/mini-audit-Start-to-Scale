@@ -1,0 +1,17 @@
+thematic: "Go-to-Market"
+questions:
+  - text: "Avez-vous défini des indicateurs de succès business (KPIs) et les suivez-vous régulièrement ?"
+    description: "Métriques business clés (nombre d'utilisateurs, taux d'adoption, revenus, satisfaction). Essentiel pour piloter la croissance."
+  
+  - text: "Mesurez-vous le coût d'acquisition de nouveaux clients (CAC) ?"
+    description: "Suivi du coût pour acquérir un nouveau client. Essentiel pour optimiser les efforts commerciaux."
+  
+  - text: "Avez-vous identifié vos segments clients prioritaires et votre stratégie de ciblage ?"
+    description: "Définition claire des personas et stratégie pour les atteindre. Essentiel pour un go-to-market efficace."
+  
+  - text: "Avez-vous un processus de vente structuré et documenté ?"
+    description: "Processus de vente avec étapes claires, outils et méthodes. Essentiel pour scaler les ventes."
+  
+  - text: "Avez-vous identifié vos partenaires stratégiques pour le déploiement ?"
+    description: "Partenaires clés (institutions, associations, entreprises) qui peuvent faciliter le déploiement. Essentiel pour accélérer l'adoption."
+

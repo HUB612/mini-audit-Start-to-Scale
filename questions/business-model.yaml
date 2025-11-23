@@ -1,0 +1,17 @@
+thematic: "Business Model"
+questions:
+  - text: "Avez-vous un modèle économique clair et documenté pour votre solution ?"
+    description: "Modèle de revenus, coûts, et viabilité économique. Essentiel pour assurer la pérennité du projet."
+  
+  - text: "Avez-vous calculé le retour sur investissement (ROI) pour vos clients qui adoptent votre solution ?"
+    description: "Calcul du ROI montrant les gains (économiques, temps, qualité) pour vos clients. Essentiel pour convaincre les décideurs."
+  
+  - text: "Avez-vous une stratégie de pricing claire et adaptée à votre marché ?"
+    description: "Modèle tarifaire adapté à votre secteur avec justification. Essentiel pour la viabilité économique."
+  
+  - text: "Avez-vous analysé la concurrence et votre positionnement sur le marché ?"
+    description: "Analyse concurrentielle et différenciation. Essentiel pour identifier les avantages compétitifs."
+  
+  - text: "Avez-vous un plan de croissance à court, moyen et long terme ?"
+    description: "Roadmap business avec objectifs quantifiés et stratégies pour chaque horizon temporel. Essentiel pour structurer la croissance."
+
