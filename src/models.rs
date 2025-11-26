@@ -61,4 +61,3 @@ pub struct QuestionYaml {
     pub text: String,
     pub description: Option<String>,
 }
-

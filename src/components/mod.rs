@@ -1,10 +1,9 @@
-pub mod welcome;
+pub mod contact;
 pub mod questions;
 pub mod results;
-pub mod contact;
+pub mod welcome;
 
-pub use welcome::WelcomeScreen;
+pub use contact::ContactScreen;
 pub use questions::QuestionsScreen;
 pub use results::ResultsScreen;
-pub use contact::ContactScreen;
-
+pub use welcome::WelcomeScreen;

@@ -30,8 +30,24 @@ pub fn WelcomeScreen(props: &Props) -> Html {
                 <button onclick={on_click} class="btn btn-primary">
                     {"Commencer l'audit"}
                 </button>
+                <footer class="welcome-footer">
+                    <p class="footer-text">
+                        {"Made with "}
+                        <span class="heart">{"❤️"}</span>
+                        {" by Hub612"}
+                    </p>
+                    <a
+                        href="https://www.websitecarbon.com/website/mini-audit-start-to-scale-vercel-app/"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="carbon-badge"
+                        title="Website Carbon Calculator"
+                    >
+                        <span class="carbon-text">{"🌱 "}</span>
+                        <span class="carbon-label">{"Carbon footprint"}</span>
+                    </a>
+                </footer>
             </div>
         </div>
     }
 }
-

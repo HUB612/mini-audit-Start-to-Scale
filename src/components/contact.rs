@@ -1,6 +1,6 @@
-use yew::prelude::*;
-use wasm_bindgen::JsCast;
 use crate::app::FormData;
+use wasm_bindgen::JsCast;
+use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct Props {
@@ -9,6 +9,7 @@ pub struct Props {
     pub on_update: Callback<(String, String)>,
     pub on_submit: Callback<()>,
     pub on_back: Callback<()>,
+    pub on_go_to_welcome: Callback<()>,
 }
 
 #[function_component]
@@ -81,10 +82,20 @@ pub fn ContactScreen(props: &Props) -> Html {
         Callback::from(move |_| callback.emit(()))
     };
 
+    let on_logo_click = {
+        let callback = props.on_go_to_welcome.clone();
+        Callback::from(move |_| callback.emit(()))
+    };
+
     if props.form_submitted {
         html! {
             <div class="screen active">
-                <div class="container">
+                <div class="container contact-container">
+                    <div class="questions-header">
+                        <div class="header-logo" onclick={on_logo_click} style="cursor: pointer;">
+                            <img src="hub612-logo.webp" alt="HUB612" />
+                        </div>
+                    </div>
                     <div class="form-success">
                         <h3>{"✓ Merci !"}</h3>
                         <p>{"Votre demande a été envoyée. Notre équipe vous recontactera dans les plus brefs délais."}</p>
@@ -95,66 +106,71 @@ pub fn ContactScreen(props: &Props) -> Html {
     } else {
         html! {
             <div class="screen active">
-                <div class="container">
+                <div class="container contact-container">
+                    <div class="questions-header">
+                        <div class="header-logo" onclick={on_logo_click} style="cursor: pointer;">
+                            <img src="hub612-logo.webp" alt="HUB612" />
+                        </div>
+                    </div>
                     <h2>{"Contactez-nous"}</h2>
                     <p class="contact-intro">
                         {"Remplissez ce formulaire et notre équipe vous recontactera rapidement pour discuter du programme Start to Scale."}
                     </p>
-                    
+
                     <form onsubmit={on_submit} class="contact-form">
                         <div class="form-group">
                             <label for="startup-name">{"Nom de votre startup *"}</label>
-                            <input 
-                                type="text" 
-                                id="startup-name" 
+                            <input
+                                type="text"
+                                id="startup-name"
                                 value={props.form_data.startup_name.clone()}
                                 oninput={on_startup_name}
                                 required={true}
                             />
                         </div>
-                        
+
                         <div class="form-group">
                             <label for="contact-name">{"Votre nom *"}</label>
-                            <input 
-                                type="text" 
-                                id="contact-name" 
+                            <input
+                                type="text"
+                                id="contact-name"
                                 value={props.form_data.contact_name.clone()}
                                 oninput={on_contact_name}
                                 required={true}
                             />
                         </div>
-                        
+
                         <div class="form-group">
                             <label for="contact-email">{"Votre email *"}</label>
-                            <input 
-                                type="email" 
-                                id="contact-email" 
+                            <input
+                                type="email"
+                                id="contact-email"
                                 value={props.form_data.contact_email.clone()}
                                 oninput={on_contact_email}
                                 required={true}
                             />
                         </div>
-                        
+
                         <div class="form-group">
                             <label for="contact-phone">{"Téléphone (optionnel)"}</label>
-                            <input 
-                                type="tel" 
-                                id="contact-phone" 
+                            <input
+                                type="tel"
+                                id="contact-phone"
                                 value={props.form_data.contact_phone.clone()}
                                 oninput={on_contact_phone}
                             />
                         </div>
-                        
+
                         <div class="form-group">
                             <label for="contact-message">{"Message (optionnel)"}</label>
-                            <textarea 
-                                id="contact-message" 
+                            <textarea
+                                id="contact-message"
                                 value={props.form_data.message.clone()}
                                 oninput={on_message}
                                 rows="4"
                             ></textarea>
                         </div>
-                        
+
                         <div class="form-actions">
                             <button type="button" onclick={on_back} class="btn btn-secondary">
                                 {"Retour aux résultats"}
@@ -167,4 +183,3 @@ pub fn ContactScreen(props: &Props) -> Html {
         }
     }
 }
-

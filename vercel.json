@@ -3,6 +3,7 @@
   "outputDirectory": "dist",
   "devCommand": "trunk serve index.html",
   "framework": null,
+  "installCommand": "echo 'Rust will be installed by build.sh'",
   "rewrites": [
     {
       "source": "/(.*)",

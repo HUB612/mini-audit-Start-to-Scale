@@ -1,0 +1,12 @@
+# Configuration Clippy pour le projet
+# Ce fichier permet de configurer les seuils et règles de clippy
+
+# Seuils de complexité
+cognitive-complexity-threshold = 30
+too-many-arguments-threshold = 7
+type-complexity-threshold = 300
+
+# Autres configurations
+avoid-breaking-exported-api = false
+msrv = "1.70"
+

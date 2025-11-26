@@ -100,31 +100,20 @@ _hub-survey/
 
 ### Déploiement automatique via Vercel (recommandé)
 
-Le projet est déployé automatiquement par Vercel à chaque push sur la branche `main`.
+Le projet peut être déployé automatiquement par Vercel à chaque push sur la branche `main`.
 
 **Configuration initiale :**
 
 1. **Créer un projet sur Vercel** (une seule fois) :
    - Allez sur [vercel.com](https://vercel.com)
-   - Importez le dépôt `HUB612/mini-audit-Start-to-Scale`
-   - Notez l'**Org ID** et le **Project ID** (disponibles dans les paramètres du projet)
+   - Importez votre dépôt Git (par exemple depuis GitHub, GitLab ou Bitbucket)
+2. Vercel détectera automatiquement la configuration définie dans `vercel.json` :
+   - **Build Command** : `./build.sh`
+   - **Output Directory** : `dist`
+   - **Dev Command** : `trunk serve index.html`
+3. À chaque push sur la branche configurée (par défaut `main`), Vercel lancera automatiquement un nouveau déploiement.
 
-2. **Désactiver le déploiement automatique de Vercel** (important !) :
-   - Allez sur votre projet Vercel → Settings → Git
-   - Désactivez "Automatic deployments from Git"
-   - Cela évite les déploiements en double (Vercel + GitHub Actions)
-
-3. **Configurer les secrets GitHub** :
-   - 📖 **Guide détaillé** : Voir [SETUP_VERCEL.md](SETUP_VERCEL.md) pour des instructions étape par étape
-   - Allez dans les paramètres du dépôt GitHub → Secrets and variables → Actions
-   - Ajoutez les secrets suivants :
-     - `VERCEL_TOKEN` : Token d'API Vercel (généré dans [Vercel Settings → Tokens](https://vercel.com/account/tokens))
-     - `VERCEL_ORG_ID` : ID de votre organisation Vercel (Team ID dans Settings → General)
-     - `VERCEL_PROJECT_ID` : ID de votre projet Vercel (dans Settings → General)
-
-4. **Le déploiement se fera automatiquement** à chaque push sur `main` via GitHub Actions !
-
-Note : le workflow GitHub Actions historique `.github/workflows/deploy-vercel.yml` n'est plus utilisé, le déploiement est géré directement par Vercel.
+> 📌 L'ancien flux de déploiement basé sur GitHub Actions et des secrets `VERCEL_*` n'est plus utilisé pour ce projet. Le guide [SETUP_VERCEL.md](SETUP_VERCEL.md) est conservé uniquement comme référence historique.
 
 ### Déploiement sur Vercel (manuel)
 
@@ -132,8 +121,8 @@ Le projet est configuré pour être déployé sur Vercel. La configuration se tr
 
 **Option 1 : Déploiement via l'interface Vercel**
 
-1. Allez sur [vercel.com](https://vercel.com) et connectez votre compte GitHub
-2. Importez le dépôt `HUB612/mini-audit-Start-to-Scale`
+1. Allez sur [vercel.com](https://vercel.com) et connectez votre compte Git
+2. Importez le dépôt contenant ce projet
 3. Vercel détectera automatiquement la configuration dans `vercel.json`
 4. Configurez les paramètres de build :
    - **Framework Preset** : Other

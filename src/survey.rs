@@ -1,5 +1,4 @@
 use crate::models::*;
-use serde_yaml;
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -12,13 +11,22 @@ pub struct Survey {
 impl Survey {
     pub fn new() -> Self {
         let mut questions = Vec::new();
-        
+
         // Charger les questions depuis les fichiers YAML
         let thematics = vec![
-            ("business-model", include_str!("../questions/business-model.yaml")),
+            (
+                "business-model",
+                include_str!("../questions/business-model.yaml"),
+            ),
             ("produit", include_str!("../questions/produit.yaml")),
-            ("go-to-market", include_str!("../questions/go-to-market.yaml")),
-            ("organisation", include_str!("../questions/organisation.yaml")),
+            (
+                "go-to-market",
+                include_str!("../questions/go-to-market.yaml"),
+            ),
+            (
+                "organisation",
+                include_str!("../questions/organisation.yaml"),
+            ),
             ("financement", include_str!("../questions/financement.yaml")),
         ];
 
@@ -97,7 +105,7 @@ impl Survey {
 
             scores_by_thematic
                 .entry(question.thematic.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(score);
         }
 
@@ -119,4 +127,3 @@ impl Survey {
         }
     }
 }
-

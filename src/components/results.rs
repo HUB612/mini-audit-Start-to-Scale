@@ -1,9 +1,7 @@
-use yew::prelude::*;
-use wasm_bindgen::JsValue;
 use crate::models::SurveyResults;
-use web_sys::HtmlCanvasElement;
 use wasm_bindgen::JsCast;
-
+use web_sys::HtmlCanvasElement;
+use yew::prelude::*;
 
 #[derive(Properties, PartialEq)]
 pub struct Props {
@@ -45,31 +43,31 @@ fn get_feedback_message(thematic: &str, score: f64) -> &'static str {
         ("Business Model", 2) => "Vous avez une base solide, mais il reste des zones d'ombre. C'est comme avoir une recette sans les quantités exactes : ça peut marcher, mais c'est risqué !",
         ("Business Model", 3) => "Votre modèle économique est bien structuré ! Il ne manque plus que quelques ajustements pour passer à la vitesse supérieure. On dirait presque un pro !",
         ("Business Model", 4) => "Remarquable ! Votre business model est solide comme un roc. Vous êtes prêt à scaler, mais même les meilleurs ont toujours des axes d'amélioration !",
-        
+
         ("Produit", 0) => "Votre produit semble être en mode 'stealth mode' : invisible, même pour vous ! Il est temps de sortir de l'ombre et de voir ce qui se passe vraiment.",
         ("Produit", 1) => "Vous commencez à avoir une idée de ce qui se passe dans votre produit, mais c'est encore un peu flou. C'est comme regarder à travers une vitre embuée : on devine, mais on ne voit pas tout !",
         ("Produit", 2) => "Vous avez mis en place quelques outils de suivi, mais il manque encore des pièces du puzzle. C'est comme avoir un tableau de bord avec la moitié des voyants éteints !",
         ("Produit", 3) => "Chapeau ! Votre produit est bien instrumenté. Vous avez une bonne vision de ce qui se passe, avec juste quelques angles morts à éclaircir.",
         ("Produit", 4) => "Parfait ! Votre produit est sous surveillance rapprochée. Vous savez tout (ou presque) de ce qui s'y passe. Un vrai pro de la data !",
-        
+
         ("Go-to-Market", 0) => "Votre stratégie go-to-market est un peu comme lancer une bouteille à la mer : vous espérez que quelqu'un la trouvera, mais vous ne savez pas qui ni quand !",
         ("Go-to-Market", 1) => "Vous avez quelques idées sur comment aller au marché, mais c'est encore un peu au feeling. C'est comme naviguer sans boussole : ça peut marcher, mais c'est risqué !",
         ("Go-to-Market", 2) => "Votre go-to-market prend forme, mais il manque encore de la structure. C'est comme avoir une carte sans légende : vous savez où vous êtes, mais pas comment arriver à destination !",
         ("Go-to-Market", 3) => "Votre stratégie go-to-market est bien rodée ! Vous avez les bons outils et les bons indicateurs. Il ne reste plus qu'à optimiser pour passer à la vitesse supérieure.",
         ("Go-to-Market", 4) => "Formidable ! Votre go-to-market est une machine bien huilée. Vous savez exactement où vous allez et comment y arriver. Un vrai stratège !",
-        
+
         ("Organisation", 0) => "Votre organisation ressemble un peu à une ruche sans reine : tout le monde bouge, mais personne ne sait vraiment qui fait quoi ! Il est temps de structurer tout ça.",
         ("Organisation", 1) => "Vous avez commencé à organiser les choses, mais c'est encore un peu le bazar. C'est comme un tiroir à chaussettes : on trouve parfois, mais c'est rarement au bon endroit !",
         ("Organisation", 2) => "Votre organisation a une structure, mais elle pourrait être plus claire. C'est comme avoir un organigramme écrit sur un post-it : ça existe, mais c'est fragile !",
         ("Organisation", 3) => "Félicitations ! Votre organisation est bien structurée. Les rôles sont clairs et les processus en place. Il ne reste plus qu'à peaufiner les détails.",
         ("Organisation", 4) => "Exemplaire ! Votre organisation est au top. Tout est bien défini, documenté et rodé. Vous êtes prêt à scaler sans perdre en efficacité !",
-        
+
         ("Financement", 0) => "Votre stratégie de financement est un peu comme chercher une aiguille dans une botte de foin : vous savez qu'elle existe, mais vous ne savez pas où la chercher !",
         ("Financement", 1) => "Vous avez quelques idées sur le financement, mais c'est encore flou. C'est comme avoir un compte en banque sans savoir combien il contient : vous espérez que c'est suffisant !",
         ("Financement", 2) => "Votre approche du financement est en cours de structuration. Vous avez les bases, mais il manque encore quelques éléments clés pour convaincre les investisseurs.",
         ("Financement", 3) => "Bien joué ! Votre stratégie de financement est solide. Vous avez les bons outils et les bons arguments. Il ne reste plus qu'à peaufiner pour maximiser vos chances.",
         ("Financement", 4) => "Exceptionnel ! Votre stratégie de financement est au point. Vous êtes prêt à lever des fonds comme un pro. Les investisseurs vont se battre pour vous !",
-        
+
         _ => "Votre score indique qu'il y a encore du travail à faire, mais c'est normal ! Chaque startup a ses défis à relever.",
     }
 }
@@ -122,7 +120,7 @@ pub fn ResultsScreen(props: &Props) -> Html {
                 <p class="results-intro">
                     {"Voici votre profil de maturité sur les différentes thématiques du programme Start to Scale."}
                 </p>
-                
+
                 <div class="radar-chart-container">
                     <div class="global-score">
                         <span class="global-score-label">{"Score global"}</span>
@@ -178,7 +176,7 @@ fn draw_radar_chart(canvas: &HtmlCanvasElement, scores: &std::collections::HashM
     let center_x = size as f64 / 2.0;
     let center_y = size as f64 / 2.0;
     // Réduire le radius pour laisser plus d'espace aux labels
-    let radius = (center_x.min(center_y) - 80.0) as f64;
+    let radius = center_x.min(center_y) - 80.0;
 
     // Dessiner les cercles de grille
     ctx.set_stroke_style_str("#e0e0e0");
@@ -186,7 +184,8 @@ fn draw_radar_chart(canvas: &HtmlCanvasElement, scores: &std::collections::HashM
     for i in 1..=5 {
         let r = (radius * i as f64) / 5.0;
         ctx.begin_path();
-        ctx.arc(center_x, center_y, r, 0.0, std::f64::consts::PI * 2.0).unwrap();
+        ctx.arc(center_x, center_y, r, 0.0, std::f64::consts::PI * 2.0)
+            .unwrap();
         ctx.stroke();
     }
 
@@ -209,7 +208,7 @@ fn draw_radar_chart(canvas: &HtmlCanvasElement, scores: &std::collections::HashM
         // Labels avec scores
         let score = scores.get(*thematic).unwrap_or(&0.0);
         let score_text = format!("{}%", score.round() as u32);
-        
+
         // Label de la thématique
         ctx.set_fill_style_str("#333");
         ctx.set_font("bold 11px Arial");
@@ -218,7 +217,7 @@ fn draw_radar_chart(canvas: &HtmlCanvasElement, scores: &std::collections::HashM
         let label_x = center_x + angle.cos() * (radius + 35.0);
         let label_y = center_y + angle.sin() * (radius + 35.0);
         ctx.fill_text(thematic, label_x, label_y).unwrap();
-        
+
         // Score en rouge, plus grand
         ctx.set_fill_style_str("#d32f2f");
         ctx.set_font("bold 16px Arial");
@@ -229,7 +228,7 @@ fn draw_radar_chart(canvas: &HtmlCanvasElement, scores: &std::collections::HashM
 
     // Dessiner les données
     ctx.set_fill_style_str("rgba(211, 47, 47, 0.2)");
-    ctx.set_stroke_style(&JsValue::from_str("#d32f2f"));
+    ctx.set_stroke_style_str("#d32f2f");
     ctx.set_line_width(2.0);
     ctx.begin_path();
 
@@ -265,4 +264,3 @@ fn draw_radar_chart(canvas: &HtmlCanvasElement, scores: &std::collections::HashM
         ctx.fill();
     }
 }
-

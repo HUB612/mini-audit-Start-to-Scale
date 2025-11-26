@@ -1,7 +1,7 @@
-use yew::prelude::*;
-use std::rc::Rc;
-use crate::components::{WelcomeScreen, QuestionsScreen, ResultsScreen, ContactScreen};
+use crate::components::{ContactScreen, QuestionsScreen, ResultsScreen, WelcomeScreen};
 use crate::survey::Survey;
+use std::rc::Rc;
+use yew::prelude::*;
 
 pub enum Screen {
     Welcome,
@@ -156,6 +156,7 @@ impl Component for App {
                             on_update={ctx.link().callback(|(field, value)| Msg::UpdateFormField(field, value))}
                             on_submit={ctx.link().callback(|_| Msg::SubmitForm)}
                             on_back={ctx.link().callback(|_| Msg::BackToResults)}
+                            on_go_to_welcome={ctx.link().callback(|_| Msg::GoToWelcome)}
                         />
                     },
                 }}
@@ -189,4 +190,3 @@ pub enum Msg {
     SubmitForm,
     GoToWelcome,
 }
-

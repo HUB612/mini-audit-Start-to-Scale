@@ -1,7 +1,7 @@
-mod models;
-mod survey;
 mod app;
 mod components;
+mod models;
+mod survey;
 
 use wasm_bindgen::prelude::*;
 
