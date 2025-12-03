@@ -106,13 +106,13 @@ impl Component for App {
                 if self.form_submitting {
                     return false;
                 }
-                
+
                 self.form_submitting = true;
                 self.form_error = None;
-                
+
                 let form_data = self.form_data.clone();
                 let link = ctx.link().clone();
-                
+
                 spawn_local(async move {
                     let json_data = serde_json::json!({
                         "startup_name": form_data.startup_name,
@@ -121,33 +121,32 @@ impl Component for App {
                         "contact_phone": form_data.contact_phone,
                         "message": form_data.message,
                     });
-                    
+
                     let json_string = json_data.to_string();
-                    
+
                     let mut opts = RequestInit::new();
                     opts.method("POST");
                     opts.mode(web_sys::RequestMode::Cors);
-                    
+
                     let headers = web_sys::Headers::new().unwrap();
                     headers.set("Content-Type", "application/json").unwrap();
                     opts.headers(&headers);
-                    
+
                     opts.body(Some(&JsValue::from_str(&json_string)));
-                    
+
                     let url = "/api/contact";
                     let request = match web_sys::Request::new_with_str_and_init(url, &opts) {
                         Ok(req) => req,
                         Err(err) => {
-                            let error_msg = format!("Erreur lors de la création de la requête: {:?}", err);
+                            let error_msg =
+                                format!("Erreur lors de la création de la requête: {:?}", err);
                             link.send_message(Msg::FormSubmitError(error_msg));
                             return;
                         }
                     };
-                    
+
                     match wasm_bindgen_futures::JsFuture::from(
-                        web_sys::window()
-                            .unwrap()
-                            .fetch_with_request(&request)
+                        web_sys::window().unwrap().fetch_with_request(&request),
                     )
                     .await
                     {
@@ -155,19 +154,26 @@ impl Component for App {
                             let resp: web_sys::Response = match response_val.dyn_into() {
                                 Ok(r) => r,
                                 Err(_) => {
-                                    link.send_message(Msg::FormSubmitError("Réponse invalide".to_string()));
+                                    link.send_message(Msg::FormSubmitError(
+                                        "Réponse invalide".to_string(),
+                                    ));
                                     return;
                                 }
                             };
-                            
+
                             if resp.ok() {
                                 link.send_message(Msg::FormSubmitSuccess);
                             } else {
                                 let error_text = match resp.text() {
                                     Ok(text_future) => {
-                                        match wasm_bindgen_futures::JsFuture::from(text_future).await {
-                                            Ok(text) => text.as_string().unwrap_or_else(|| "Erreur inconnue".to_string()),
-                                            Err(_) => "Erreur lors de la lecture de la réponse".to_string(),
+                                        match wasm_bindgen_futures::JsFuture::from(text_future)
+                                            .await
+                                        {
+                                            Ok(text) => text
+                                                .as_string()
+                                                .unwrap_or_else(|| "Erreur inconnue".to_string()),
+                                            Err(_) => "Erreur lors de la lecture de la réponse"
+                                                .to_string(),
                                         }
                                     }
                                     Err(_) => format!("Erreur HTTP: {}", resp.status()),
@@ -181,7 +187,7 @@ impl Component for App {
                         }
                     }
                 });
-                
+
                 true
             }
             Msg::FormSubmitSuccess => {

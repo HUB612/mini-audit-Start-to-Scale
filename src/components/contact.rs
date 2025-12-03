@@ -184,16 +184,16 @@ pub fn ContactScreen(props: &Props) -> Html {
                         </div>
 
                         <div class="form-actions">
-                            <button 
-                                type="button" 
-                                onclick={on_back} 
+                            <button
+                                type="button"
+                                onclick={on_back}
                                 class="btn btn-secondary"
                                 disabled={props.form_submitting}
                             >
                                 {"Retour aux résultats"}
                             </button>
-                            <button 
-                                type="submit" 
+                            <button
+                                type="submit"
                                 class="btn btn-primary"
                                 disabled={props.form_submitting}
                             >
