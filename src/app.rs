@@ -50,7 +50,7 @@ impl Component for App {
         }
     }
 
-    fn update(&mut self, _ctx: &Context<Self>, msg: Self::Message) -> bool {
+    fn update(&mut self, ctx: &Context<Self>, msg: Self::Message) -> bool {
         match msg {
             Msg::StartSurvey => {
                 let survey = Rc::new(Survey::new());
@@ -125,14 +125,14 @@ impl Component for App {
                     let json_string = json_data.to_string();
 
                     let mut opts = RequestInit::new();
-                    opts.method("POST");
-                    opts.mode(web_sys::RequestMode::Cors);
+                    opts.set_method("POST");
+                    opts.set_mode(web_sys::RequestMode::Cors);
 
                     let headers = web_sys::Headers::new().unwrap();
                     headers.set("Content-Type", "application/json").unwrap();
-                    opts.headers(&headers);
+                    opts.set_headers(&headers);
 
-                    opts.body(Some(&JsValue::from_str(&json_string)));
+                    opts.set_body(Some(&JsValue::from_str(&json_string)));
 
                     let url = "/api/contact";
                     let request = match web_sys::Request::new_with_str_and_init(url, &opts) {
