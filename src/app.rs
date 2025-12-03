@@ -130,6 +130,7 @@ impl Component for App {
                     let body = JsValue::from_str(&json_string);
 
                     let opts = {
+                        #[allow(unused_mut)]
                         let mut init = RequestInit::new();
                         init.set_method("POST");
                         init.set_mode(web_sys::RequestMode::Cors);
