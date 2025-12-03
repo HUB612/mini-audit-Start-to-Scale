@@ -6,12 +6,12 @@ questions:
   - text: "Avez-vous un business plan avec projections financières sur 3-5 ans ?"
     description: "Plan financier avec projections, hypothèses, scénarios. Essentiel pour convaincre les investisseurs."
   
+  - text: "Avez-vous préparé une stratégie de levée de fonds avec timeline et objectifs ?"
+    description: "Roadmap de levée, timing, objectifs intermédiaires. Essentiel pour structurer votre recherche de financement."
+
   - text: "Avez-vous identifié vos besoins de financement et l'utilisation des fonds ?"
     description: "Montant nécessaire, allocation des fonds, jalons de croissance. Essentiel pour une levée réussie."
   
   - text: "Avez-vous un réseau d'investisseurs et de contacts dans l'écosystème startup ?"
-    description: "Réseau d'investisseurs, business angels, VCs. Essentiel pour accéder au financement."
-  
-  - text: "Avez-vous préparé une stratégie de levée de fonds avec timeline et objectifs ?"
-    description: "Roadmap de levée, timing, objectifs intermédiaires. Essentiel pour structurer votre recherche de financement."
+    description: "Réseau d'investisseurs, business angels, VCs. Essentiel pour accéder au financement."  
 
