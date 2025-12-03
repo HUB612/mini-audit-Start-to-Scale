@@ -129,14 +129,11 @@ impl Component for App {
 
                     let body = JsValue::from_str(&json_string);
 
-                    let opts = {
-                        let mut init = RequestInit::new();
-                        init.set_method("POST");
-                        init.set_mode(web_sys::RequestMode::Cors);
-                        init.set_headers(&headers);
-                        init.set_body(&body);
-                        init
-                    };
+                    let mut opts = RequestInit::new();
+                    opts.set_method("POST");
+                    opts.set_mode(web_sys::RequestMode::Cors);
+                    opts.set_headers(&headers);
+                    opts.set_body(&body);
 
                     let url = "/api/contact";
                     let request = match web_sys::Request::new_with_str_and_init(url, &opts) {
