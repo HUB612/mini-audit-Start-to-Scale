@@ -133,7 +133,7 @@ impl Component for App {
                     opts.set_headers(&headers);
 
                     let body = JsValue::from_str(&json_string);
-                    opts.set_body(Some(&body));
+                    opts.set_body(&body);
 
                     let url = "/api/contact";
                     let request = match web_sys::Request::new_with_str_and_init(url, &opts) {
