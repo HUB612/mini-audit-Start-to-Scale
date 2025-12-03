@@ -124,16 +124,19 @@ impl Component for App {
 
                     let json_string = json_data.to_string();
 
-                    let mut opts = RequestInit::new();
-                    opts.set_method("POST");
-                    opts.set_mode(web_sys::RequestMode::Cors);
-
                     let headers = web_sys::Headers::new().unwrap();
                     headers.set("Content-Type", "application/json").unwrap();
-                    opts.set_headers(&headers);
 
                     let body = JsValue::from_str(&json_string);
-                    opts.set_body(&body);
+
+                    let opts = {
+                        let mut init = RequestInit::new();
+                        init.set_method("POST");
+                        init.set_mode(web_sys::RequestMode::Cors);
+                        init.set_headers(&headers);
+                        init.set_body(&body);
+                        init
+                    };
 
                     let url = "/api/contact";
                     let request = match web_sys::Request::new_with_str_and_init(url, &opts) {
