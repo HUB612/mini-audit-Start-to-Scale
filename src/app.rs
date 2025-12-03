@@ -132,7 +132,8 @@ impl Component for App {
                     headers.set("Content-Type", "application/json").unwrap();
                     opts.set_headers(&headers);
 
-                    opts.set_body(Some(&JsValue::from_str(&json_string)));
+                    let body = JsValue::from_str(&json_string);
+                    opts.set_body(Some(&body));
 
                     let url = "/api/contact";
                     let request = match web_sys::Request::new_with_str_and_init(url, &opts) {
