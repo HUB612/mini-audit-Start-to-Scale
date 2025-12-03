@@ -6,6 +6,8 @@ use yew::prelude::*;
 pub struct Props {
     pub form_data: FormData,
     pub form_submitted: bool,
+    pub form_error: Option<String>,
+    pub form_submitting: bool,
     pub on_update: Callback<(String, String)>,
     pub on_submit: Callback<()>,
     pub on_back: Callback<()>,
@@ -117,6 +119,16 @@ pub fn ContactScreen(props: &Props) -> Html {
                         {"Remplissez ce formulaire et notre équipe vous recontactera rapidement pour discuter du programme Start to Scale."}
                     </p>
 
+                    {if let Some(ref error) = props.form_error {
+                        html! {
+                            <div class="form-error" style="background-color: #fee; color: #c33; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">
+                                <strong>{"Erreur : "}</strong>{error}
+                            </div>
+                        }
+                    } else {
+                        html! {}
+                    }}
+
                     <form onsubmit={on_submit} class="contact-form">
                         <div class="form-group">
                             <label for="startup-name">{"Nom de votre startup *"}</label>
@@ -172,10 +184,25 @@ pub fn ContactScreen(props: &Props) -> Html {
                         </div>
 
                         <div class="form-actions">
-                            <button type="button" onclick={on_back} class="btn btn-secondary">
+                            <button 
+                                type="button" 
+                                onclick={on_back} 
+                                class="btn btn-secondary"
+                                disabled={props.form_submitting}
+                            >
                                 {"Retour aux résultats"}
                             </button>
-                            <button type="submit" class="btn btn-primary">{"Envoyer"}</button>
+                            <button 
+                                type="submit" 
+                                class="btn btn-primary"
+                                disabled={props.form_submitting}
+                            >
+                                {if props.form_submitting {
+                                    "Envoi en cours..."
+                                } else {
+                                    "Envoyer"
+                                }}
+                            </button>
                         </div>
                     </form>
                 </div>

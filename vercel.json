@@ -6,7 +6,7 @@
   "installCommand": "echo 'Rust will be installed by build.sh'",
   "rewrites": [
     {
-      "source": "/(.*)",
+      "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
   ]

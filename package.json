@@ -1,0 +1,16 @@
+{
+  "name": "mini-audit-start-to-scale",
+  "version": "0.1.1",
+  "description": "Mini audit Start to Scale pour le Hub612",
+  "scripts": {
+    "build": "echo 'Build handled by build.sh'"
+  },
+  "dependencies": {
+    "@vercel/node": "^3.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
+
