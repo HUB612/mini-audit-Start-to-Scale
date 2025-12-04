@@ -363,31 +363,105 @@ export default async function handler(
                   console.log(`✓✓✓ VERIFIED: Contact is linked to company ${companyId}`);
                 } else {
                   console.warn(`⚠ WARNING: Contact companyId is ${contactData.companyId}, expected ${companyId}`);
-                  console.warn(`  Trying alternative method with companyId in attributes...`);
+                  console.warn(`  The PUT method with companyId did not work. Trying alternative methods...`);
                   
-                  // Essayer avec companyId dans attributes
-                  const updatePayload2 = {
-                    attributes: {
-                      COMPANY_ID: String(companyId),
-                    },
-                  };
-                  
-                  const updateContactResponse2 = await fetch(
-                    `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
-                    {
-                      method: 'PUT',
-                      headers: {
-                        'accept': 'application/json',
-                        'api-key': brevoApiKey,
-                        'content-type': 'application/json',
-                      },
-                      body: JSON.stringify(updatePayload2),
+                  // Méthode alternative 1 : Mettre à jour l'entreprise avec le contact associé
+                  console.log(`  Method 1: Updating company with associated contact...`);
+                  try {
+                    const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
+                    if (!isNaN(contactIdNum)) {
+                      // Essayer de mettre à jour l'entreprise avec les contacts
+                      const updateCompanyResponse = await fetch(
+                        `https://api.brevo.com/v3/companies/${companyId}`,
+                        {
+                          method: 'PATCH',
+                          headers: {
+                            'accept': 'application/json',
+                            'api-key': brevoApiKey,
+                            'content-type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            contacts: [contactIdNum],
+                          }),
+                        }
+                      );
+                      
+                      if (updateCompanyResponse.ok) {
+                        console.log(`✓ Method 1 (PATCH company) returned ${updateCompanyResponse.status}`);
+                      } else {
+                        const errorText = await updateCompanyResponse.text();
+                        console.warn(`  Method 1 failed: ${errorText}`);
+                      }
                     }
-                  );
-                  
-                  if (updateContactResponse2.ok) {
-                    console.log(`✓ Alternative method (attributes) returned ${updateContactResponse2.status}`);
+                  } catch (method1Error) {
+                    console.warn(`  Method 1 error:`, method1Error);
                   }
+                  
+                  // Méthode alternative 2 : Essayer avec l'ID numérique du contact au lieu de l'email
+                  console.log(`  Method 2: PUT contact by ID instead of email...`);
+                  try {
+                    const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
+                    if (!isNaN(contactIdNum)) {
+                      const updateContactByIdResponse = await fetch(
+                        `https://api.brevo.com/v3/contacts/${contactIdNum}`,
+                        {
+                          method: 'PUT',
+                          headers: {
+                            'accept': 'application/json',
+                            'api-key': brevoApiKey,
+                            'content-type': 'application/json',
+                          },
+                          body: JSON.stringify({
+                            companyId: companyId,
+                          }),
+                        }
+                      );
+                      
+                      if (updateContactByIdResponse.ok) {
+                        console.log(`✓ Method 2 (PUT contact by ID) returned ${updateContactByIdResponse.status}`);
+                      } else {
+                        const errorText = await updateContactByIdResponse.text();
+                        console.warn(`  Method 2 failed: ${errorText}`);
+                      }
+                    }
+                  } catch (method2Error) {
+                    console.warn(`  Method 2 error:`, method2Error);
+                  }
+                  
+                  // Méthode alternative 3 : Essayer avec companyId dans attributes
+                  console.log(`  Method 3: PUT contact with COMPANY_ID in attributes...`);
+                  try {
+                    const updatePayload3 = {
+                      attributes: {
+                        COMPANY_ID: String(companyId),
+                      },
+                    };
+                    
+                    const updateContactResponse3 = await fetch(
+                      `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+                      {
+                        method: 'PUT',
+                        headers: {
+                          'accept': 'application/json',
+                          'api-key': brevoApiKey,
+                          'content-type': 'application/json',
+                        },
+                        body: JSON.stringify(updatePayload3),
+                      }
+                    );
+                    
+                    if (updateContactResponse3.ok) {
+                      console.log(`✓ Method 3 (attributes) returned ${updateContactResponse3.status}`);
+                    } else {
+                      const errorText = await updateContactResponse3.text();
+                      console.warn(`  Method 3 failed: ${errorText}`);
+                    }
+                  } catch (method3Error) {
+                    console.warn(`  Method 3 error:`, method3Error);
+                  }
+                  
+                  console.error(`✗✗✗ All methods failed. The contact is NOT linked to the company.`);
+                  console.error(`  This may be a limitation of the Brevo API. Please check the official documentation.`);
                 }
               }
             } catch (verifyError) {
