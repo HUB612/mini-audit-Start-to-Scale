@@ -107,20 +107,29 @@ export default async function handler(
       // On continue même si la gestion de l'entreprise échoue
     }
 
+    // Nettoyer le numéro de téléphone
+    const cleanedPhone = cleanPhoneNumber(formData.contact_phone);
+
     // 2. Ajouter le contact à la liste Brevo avec toutes les informations
+    const contactAttributes: any = {
+      FIRSTNAME: firstName,
+      LASTNAME: lastName,
+      PRENOM: firstName, // Attribut personnalisé si utilisé
+      NOM: lastName, // Attribut personnalisé si utilisé
+      STARTUP: formData.startup_name,
+      COMPANY: formData.startup_name, // Attribut company standard
+      MESSAGE: formData.message || '',
+    };
+
+    // Ajouter le téléphone uniquement s'il est valide
+    if (cleanedPhone) {
+      contactAttributes.SMS = cleanedPhone;
+      contactAttributes.TELEPHONE = cleanedPhone;
+    }
+
     const contactPayload: any = {
       email: formData.contact_email,
-      attributes: {
-        FIRSTNAME: firstName,
-        LASTNAME: lastName,
-        PRENOM: firstName, // Attribut personnalisé si utilisé
-        NOM: lastName, // Attribut personnalisé si utilisé
-        STARTUP: formData.startup_name,
-        COMPANY: formData.startup_name, // Attribut company standard
-        SMS: formData.contact_phone || '',
-        TELEPHONE: formData.contact_phone || '',
-        MESSAGE: formData.message || '',
-      },
+      attributes: contactAttributes,
       listIds: [parseInt(brevoListId, 10)],
       updateEnabled: true, // Met à jour le contact s'il existe déjà
     };
@@ -317,6 +326,23 @@ export default async function handler(
       details: error instanceof Error ? error.message : 'Unknown error'
     });
   }
+}
+
+// Fonction utilitaire pour nettoyer et valider le numéro de téléphone
+function cleanPhoneNumber(phone: string | undefined): string | null {
+  if (!phone) {
+    return null;
+  }
+  
+  // Nettoyer le numéro : garder uniquement les chiffres, +, espaces et tirets
+  const cleaned = phone.trim().replace(/[^\d+\s-]/g, '');
+  
+  // Si le numéro est vide après nettoyage, retourner null
+  if (!cleaned || cleaned.length < 3) {
+    return null;
+  }
+  
+  return cleaned;
 }
 
 // Fonction utilitaire pour échapper le HTML
