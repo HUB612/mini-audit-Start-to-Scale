@@ -52,99 +52,13 @@ export default async function handler(
 
     console.log(`Contact: FirstName: "${firstName}", LastName: "${lastName}"`);
 
-    // 1. Créer ou récupérer l'entreprise dans Brevo
-    let companyId: number | null = null;
-    
-    try {
-      // Créer l'entreprise directement (Brevo gère les doublons)
-      const createCompanyPayload = {
-        name: formData.startup_name,
-        attributes: {},
-      };
-
-      const createCompanyResponse = await fetch('https://api.brevo.com/v3/companies', {
-        method: 'POST',
-        headers: {
-          'accept': 'application/json',
-          'api-key': brevoApiKey,
-          'content-type': 'application/json',
-        },
-        body: JSON.stringify(createCompanyPayload),
-      });
-
-      if (createCompanyResponse.ok) {
-        const newCompany = await createCompanyResponse.json();
-        companyId = newCompany.id;
-        console.log(`Company created: ${formData.startup_name} (ID: ${companyId}, type: ${typeof companyId})`);
-        console.log(`Company full data:`, JSON.stringify(newCompany, null, 2));
-      } else {
-        // Si l'entreprise existe déjà, essayer de la récupérer par recherche
-        const errorText = await createCompanyResponse.text();
-        let errorData: any = null;
-        try {
-          errorData = JSON.parse(errorText);
-        } catch (e) {
-          // Ignorer l'erreur de parsing
-        }
-        
-        console.log('Company creation failed, attempting search...', errorText);
-        
-        // Recherche par nom avec pagination (API Brevo v3)
-        // On cherche dans les premières pages pour trouver l'entreprise
-        let found = false;
-        let offset = 0;
-        const limit = 50;
-        
-        while (!found && offset < 200) { // Limiter à 4 pages max pour éviter les boucles infinies
-          const searchResponse = await fetch(
-            `https://api.brevo.com/v3/companies?limit=${limit}&offset=${offset}`,
-            {
-              method: 'GET',
-              headers: {
-                'accept': 'application/json',
-                'api-key': brevoApiKey,
-              },
-            }
-          );
-
-          if (searchResponse.ok) {
-            const searchData = await searchResponse.json();
-            const foundCompany = searchData.companies?.find(
-              (c: any) => c.name?.toLowerCase() === formData.startup_name.toLowerCase()
-            );
-            if (foundCompany) {
-              companyId = foundCompany.id;
-              console.log(`Company found: ${formData.startup_name} (ID: ${companyId})`);
-              found = true;
-              break;
-            }
-            
-            // Si on a moins de résultats que la limite, on a atteint la fin
-            if (!searchData.companies || searchData.companies.length < limit) {
-              break;
-            }
-            
-            offset += limit;
-          } else {
-            const searchErrorText = await searchResponse.text();
-            console.error('Error searching for company:', searchErrorText);
-            break;
-          }
-        }
-        
-        if (!found) {
-          console.log(`Company not found: ${formData.startup_name} - will continue without company association`);
-        }
-      }
-    } catch (companyError) {
-      console.error('Error processing company:', companyError);
-      // On continue même si la gestion de l'entreprise échoue
-    }
+    // 1. Créer le contact d'abord
+    let contactId: number | null = null;
 
     // Nettoyer le numéro de téléphone
     const cleanedPhone = cleanPhoneNumber(formData.contact_phone);
 
-    // 2. Ajouter le contact à la liste Brevo avec toutes les informations
+    // Ajouter le contact à la liste Brevo avec toutes les informations
     // Note: Brevo utilise FIRSTNAME et LASTNAME comme attributs standards
     const contactAttributes: any = {
       FIRSTNAME: firstName,
@@ -169,10 +83,6 @@ export default async function handler(
       updateEnabled: true, // Met à jour le contact s'il existe déjà
     };
 
-    // Note: L'API Brevo ne permet pas d'associer directement un contact à une entreprise
-    // lors de la création. Il faut faire la liaison via l'endpoint /companies/{id}/contacts
-    // après la création du contact.
-
     const addContactResponse = await fetch('https://api.brevo.com/v3/contacts', {
       method: 'POST',
       headers: {
@@ -185,7 +95,6 @@ export default async function handler(
 
     // Ne pas échouer si le contact existe déjà (code 400 avec "duplicate_parameter")
     let contactAdded = false;
-    let contactId: number | null = null;
 
     if (!addContactResponse.ok) {
       const errorText = await addContactResponse.text();
@@ -285,188 +194,131 @@ export default async function handler(
       }
     }
 
-    // 3. Associer le contact à l'entreprise (obligatoire car l'API Brevo ne permet pas
-    // d'associer directement un contact à une entreprise lors de la création)
-    console.log(`Attempting to link contact ${contactId} to company ${companyId}`);
+    // 2. Créer ou récupérer l'entreprise dans Brevo
+    let companyId: string | null = null;
+    
+    if (contactId) {
+      try {
+        // Créer l'entreprise directement (Brevo gère les doublons)
+        const createCompanyPayload = {
+          name: formData.startup_name,
+          attributes: {},
+        };
+
+        const createCompanyResponse = await fetch('https://api.brevo.com/v3/companies', {
+          method: 'POST',
+          headers: {
+            'accept': 'application/json',
+            'api-key': brevoApiKey,
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify(createCompanyPayload),
+        });
+
+        if (createCompanyResponse.ok) {
+          const newCompany = await createCompanyResponse.json();
+          companyId = newCompany.id;
+          console.log(`✓ Company created: ${formData.startup_name} (ID: ${companyId})`);
+        } else {
+          // Si l'entreprise existe déjà, essayer de la récupérer par recherche
+          const errorText = await createCompanyResponse.text();
+          let errorData: any = null;
+          try {
+            errorData = JSON.parse(errorText);
+          } catch (e) {
+            // Ignorer l'erreur de parsing
+          }
+          
+          console.log('Company creation failed, attempting search...', errorText);
+          
+          // Recherche par nom avec pagination (API Brevo v3)
+          let found = false;
+          let offset = 0;
+          const limit = 50;
+          
+          while (!found && offset < 200) {
+            const searchResponse = await fetch(
+              `https://api.brevo.com/v3/companies?limit=${limit}&offset=${offset}`,
+              {
+                method: 'GET',
+                headers: {
+                  'accept': 'application/json',
+                  'api-key': brevoApiKey,
+                },
+              }
+            );
+
+            if (searchResponse.ok) {
+              const searchData = await searchResponse.json();
+              const foundCompany = searchData.companies?.find(
+                (c: any) => c.name?.toLowerCase() === formData.startup_name.toLowerCase()
+              );
+              if (foundCompany) {
+                companyId = foundCompany.id;
+                console.log(`✓ Company found: ${formData.startup_name} (ID: ${companyId})`);
+                found = true;
+                break;
+              }
+              
+              if (!searchData.companies || searchData.companies.length < limit) {
+                break;
+              }
+              
+              offset += limit;
+            } else {
+              const searchErrorText = await searchResponse.text();
+              console.error('Error searching for company:', searchErrorText);
+              break;
+            }
+          }
+          
+          if (!found) {
+            console.log(`Company not found: ${formData.startup_name} - will continue without company association`);
+          }
+        }
+      } catch (companyError) {
+        console.error('Error processing company:', companyError);
+      }
+    }
+
+    // 3. Lier le contact à l'entreprise via PATCH sur l'entreprise
+    // Selon la documentation Brevo: https://developers.brevo.com/reference/patch_companies-id
+    // Il faut faire un PATCH sur l'entreprise avec linkContactIds
+    console.log(`Linking contact ${contactId} to company ${companyId} via PATCH...`);
     if (companyId && contactId) {
       try {
-        // Vérifier que l'entreprise existe avant de tenter la liaison
-        const verifyCompanyResponse = await fetch(
-          `https://api.brevo.com/v3/companies/${companyId}`,
-          {
-            method: 'GET',
-            headers: {
-              'accept': 'application/json',
-              'api-key': brevoApiKey,
-            },
-          }
-        );
-
-        if (verifyCompanyResponse.ok) {
-          // Méthode principale : mettre à jour le contact avec companyId via PUT
-          // L'API Brevo permet d'associer un contact à une entreprise en mettant à jour le contact
-          console.log(`Attempting to link contact to company via PUT update...`);
-          console.log(`  Contact email: ${formData.contact_email}`);
-          console.log(`  Company ID: ${companyId}`);
-          
-          // Essayer avec companyId à la racine
-          const updatePayload = {
-            companyId: companyId,
+        const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
+        
+        if (isNaN(contactIdNum)) {
+          console.error(`✗ Invalid contactId: ${contactId} (not a number)`);
+        } else {
+          const patchPayload = {
+            linkContactIds: [contactIdNum],
           };
           
-          console.log(`Update payload (method 1):`, JSON.stringify(updatePayload));
+          console.log(`PATCH payload:`, JSON.stringify(patchPayload));
           
-          let updateContactResponse = await fetch(
-            `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+          const patchCompanyResponse = await fetch(
+            `https://api.brevo.com/v3/companies/${companyId}`,
             {
-              method: 'PUT',
+              method: 'PATCH',
               headers: {
                 'accept': 'application/json',
                 'api-key': brevoApiKey,
                 'content-type': 'application/json',
               },
-              body: JSON.stringify(updatePayload),
+              body: JSON.stringify(patchPayload),
             }
           );
 
-          let responseStatus = updateContactResponse.status;
-          let responseText = await updateContactResponse.text();
+          const responseStatus = patchCompanyResponse.status;
+          const responseText = await patchCompanyResponse.text();
           
-          console.log(`Update response status: ${responseStatus}`);
-          console.log(`Update response body: ${responseText}`);
+          console.log(`PATCH response status: ${responseStatus}`);
+          console.log(`PATCH response body: ${responseText}`);
 
-          // Vérifier si le contact a bien été mis à jour en le récupérant
-          if (updateContactResponse.ok) {
-            console.log(`✓ PUT request successful (status ${responseStatus}), verifying contact update...`);
-            
-            // Attendre un peu pour que la mise à jour soit propagée
-            await new Promise(resolve => setTimeout(resolve, 500));
-            
-            // Récupérer le contact pour vérifier s'il a le companyId
-            try {
-              const verifyContactResponse = await fetch(
-                `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
-                {
-                  method: 'GET',
-                  headers: {
-                    'accept': 'application/json',
-                    'api-key': brevoApiKey,
-                  },
-                }
-              );
-              
-              if (verifyContactResponse.ok) {
-                const contactData = await verifyContactResponse.json();
-                console.log(`Contact data after update:`, JSON.stringify(contactData, null, 2));
-                
-                if (contactData.companyId === companyId || contactData.companyId === String(companyId)) {
-                  console.log(`✓✓✓ VERIFIED: Contact is linked to company ${companyId}`);
-                } else {
-                  console.warn(`⚠ WARNING: Contact companyId is ${contactData.companyId}, expected ${companyId}`);
-                  console.warn(`  The PUT method with companyId did not work. Trying alternative methods...`);
-                  
-                  // Méthode alternative 1 : Mettre à jour l'entreprise avec le contact associé
-                  console.log(`  Method 1: Updating company with associated contact...`);
-                  try {
-                    const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
-                    if (!isNaN(contactIdNum)) {
-                      // Essayer de mettre à jour l'entreprise avec les contacts
-                      const updateCompanyResponse = await fetch(
-                        `https://api.brevo.com/v3/companies/${companyId}`,
-                        {
-                          method: 'PATCH',
-                          headers: {
-                            'accept': 'application/json',
-                            'api-key': brevoApiKey,
-                            'content-type': 'application/json',
-                          },
-                          body: JSON.stringify({
-                            contacts: [contactIdNum],
-                          }),
-                        }
-                      );
-                      
-                      if (updateCompanyResponse.ok) {
-                        console.log(`✓ Method 1 (PATCH company) returned ${updateCompanyResponse.status}`);
-                      } else {
-                        const errorText = await updateCompanyResponse.text();
-                        console.warn(`  Method 1 failed: ${errorText}`);
-                      }
-                    }
-                  } catch (method1Error) {
-                    console.warn(`  Method 1 error:`, method1Error);
-                  }
-                  
-                  // Méthode alternative 2 : Essayer avec l'ID numérique du contact au lieu de l'email
-                  console.log(`  Method 2: PUT contact by ID instead of email...`);
-                  try {
-                    const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
-                    if (!isNaN(contactIdNum)) {
-                      const updateContactByIdResponse = await fetch(
-                        `https://api.brevo.com/v3/contacts/${contactIdNum}`,
-                        {
-                          method: 'PUT',
-                          headers: {
-                            'accept': 'application/json',
-                            'api-key': brevoApiKey,
-                            'content-type': 'application/json',
-                          },
-                          body: JSON.stringify({
-                            companyId: companyId,
-                          }),
-                        }
-                      );
-                      
-                      if (updateContactByIdResponse.ok) {
-                        console.log(`✓ Method 2 (PUT contact by ID) returned ${updateContactByIdResponse.status}`);
-                      } else {
-                        const errorText = await updateContactByIdResponse.text();
-                        console.warn(`  Method 2 failed: ${errorText}`);
-                      }
-                    }
-                  } catch (method2Error) {
-                    console.warn(`  Method 2 error:`, method2Error);
-                  }
-                  
-                  // Méthode alternative 3 : Essayer avec companyId dans attributes
-                  console.log(`  Method 3: PUT contact with COMPANY_ID in attributes...`);
-                  try {
-                    const updatePayload3 = {
-                      attributes: {
-                        COMPANY_ID: String(companyId),
-                      },
-                    };
-                    
-                    const updateContactResponse3 = await fetch(
-                      `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
-                      {
-                        method: 'PUT',
-                        headers: {
-                          'accept': 'application/json',
-                          'api-key': brevoApiKey,
-                          'content-type': 'application/json',
-                        },
-                        body: JSON.stringify(updatePayload3),
-                      }
-                    );
-                    
-                    if (updateContactResponse3.ok) {
-                      console.log(`✓ Method 3 (attributes) returned ${updateContactResponse3.status}`);
-                    } else {
-                      const errorText = await updateContactResponse3.text();
-                      console.warn(`  Method 3 failed: ${errorText}`);
-                    }
-                  } catch (method3Error) {
-                    console.warn(`  Method 3 error:`, method3Error);
-                  }
-                  
-                  console.error(`✗✗✗ All methods failed. The contact is NOT linked to the company.`);
-                  console.error(`  This may be a limitation of the Brevo API. Please check the official documentation.`);
-                }
-              }
-            } catch (verifyError) {
-              console.error(`Error verifying contact update:`, verifyError);
-            }
+          if (patchCompanyResponse.ok) {
+            console.log(`✓✓✓ SUCCESS: Contact ${contactIdNum} linked to company ${companyId} via PATCH`);
           } else {
             try {
               const errorData = JSON.parse(responseText);
@@ -475,48 +327,12 @@ export default async function handler(
               console.error(`  Error code: ${errorData.code}`);
               console.error(`  Error message: ${errorData.message}`);
               console.error(`  Full error: ${responseText}`);
-              
-              // Tentative alternative : utiliser l'endpoint /companies/{id}/contacts (si disponible)
-              if (responseStatus === 400 || responseStatus === 422) {
-                console.log(`Attempting alternative: POST to /companies/{id}/contacts...`);
-                try {
-                  const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
-                  if (!isNaN(contactIdNum)) {
-                    const linkContactResponse = await fetch(
-                      `https://api.brevo.com/v3/companies/${companyId}/contacts`,
-                      {
-                        method: 'POST',
-                        headers: {
-                          'accept': 'application/json',
-                          'api-key': brevoApiKey,
-                          'content-type': 'application/json',
-                        },
-                        body: JSON.stringify({
-                          linkContactIds: [contactIdNum],
-                        }),
-                      }
-                    );
-                    
-                    if (linkContactResponse.ok) {
-                      console.log(`✓✓✓ Alternative method SUCCESS: Contact linked via /companies/{id}/contacts`);
-                    } else {
-                      const altErrorText = await linkContactResponse.text();
-                      console.error(`✗ Alternative method also failed: ${altErrorText}`);
-                    }
-                  }
-                } catch (altError) {
-                  console.error(`✗ Alternative method error:`, altError);
-                }
-              }
             } catch (parseError) {
               console.error(`✗✗✗ FAILED to link contact to company (non-JSON response):`);
               console.error(`  Status: ${responseStatus}`);
               console.error(`  Response: ${responseText}`);
             }
           }
-        } else {
-          const errorText = await verifyCompanyResponse.text();
-          console.warn(`✗ Company ${companyId} not found: ${errorText}`);
         }
       } catch (linkError) {
         console.error('✗ Error linking contact to company:', linkError);
@@ -527,7 +343,8 @@ export default async function handler(
       console.log(`ℹ No company to link: contactId=${contactId} but no companyId available`);
     }
 
-    // 2. Envoyer un email de remerciement au contact
+    // 4. Envoyer un email de remerciement au contact
+    console.log(`Preparing to send thank you email to ${formData.contact_email}...`);
     const contactFullName = `${firstName} ${lastName}`.trim();
     const thankYouEmailContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -556,6 +373,7 @@ export default async function handler(
       htmlContent: thankYouEmailContent,
     };
 
+    console.log(`Sending email via Brevo SMTP API...`);
     const emailResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -566,23 +384,42 @@ export default async function handler(
       body: JSON.stringify(thankYouEmailPayload),
     });
 
+    const emailResponseStatus = emailResponse.status;
+    const emailResponseText = await emailResponse.text();
+
     if (!emailResponse.ok) {
-      const errorText = await emailResponse.text();
-      console.error('Brevo API error sending thank you email:', errorText);
+      console.error(`✗✗✗ FAILED to send thank you email:`);
+      console.error(`  Status: ${emailResponseStatus}`);
+      console.error(`  Response: ${emailResponseText}`);
       return response.status(500).json({ 
         error: 'Failed to send thank you email',
-        details: errorText 
+        details: emailResponseText 
       });
     }
 
-    const emailResult = await emailResponse.json();
+    try {
+      const emailResult = await JSON.parse(emailResponseText);
+      console.log(`✓✓✓ SUCCESS: Thank you email sent successfully`);
+      console.log(`  Message ID: ${emailResult.messageId}`);
+      console.log(`  To: ${formData.contact_email}`);
 
-    // Répondre avec succès
-    return response.status(200).json({ 
-      success: true,
-      messageId: emailResult.messageId,
-      contactAdded: contactAdded,
-    });
+      // Répondre avec succès
+      return response.status(200).json({ 
+        success: true,
+        messageId: emailResult.messageId,
+        contactAdded: contactAdded,
+        companyLinked: companyId && contactId ? true : false,
+      });
+    } catch (parseError) {
+      console.error(`Error parsing email response:`, parseError);
+      console.log(`Email response text: ${emailResponseText}`);
+      // Répondre quand même avec succès si le statut est OK
+      return response.status(200).json({ 
+        success: true,
+        contactAdded: contactAdded,
+        companyLinked: companyId && contactId ? true : false,
+      });
+    }
 
   } catch (error) {
     console.error('Error processing contact form:', error);
