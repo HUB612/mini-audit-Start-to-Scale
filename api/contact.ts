@@ -210,6 +210,38 @@ export default async function handler(
             if (getContactResponse.ok) {
               const contactData = await getContactResponse.json();
               contactId = contactData.id;
+              
+              // Mettre à jour le contact existant avec le companyId et les attributs
+              if (companyId || Object.keys(contactAttributes).length > 0) {
+                const updatePayload: any = {
+                  attributes: contactAttributes,
+                };
+                
+                // Ajouter le companyId si disponible
+                if (companyId) {
+                  updatePayload.companyId = companyId;
+                }
+                
+                const updateContactResponse = await fetch(
+                  `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+                  {
+                    method: 'PUT',
+                    headers: {
+                      'accept': 'application/json',
+                      'api-key': brevoApiKey,
+                      'content-type': 'application/json',
+                    },
+                    body: JSON.stringify(updatePayload),
+                  }
+                );
+                
+                if (updateContactResponse.ok) {
+                  console.log(`Contact ${contactId} updated with company ${companyId}`);
+                } else {
+                  const updateErrorText = await updateContactResponse.text();
+                  console.error('Error updating contact:', updateErrorText);
+                }
+              }
             }
           } catch (getError) {
             console.error('Error getting contact ID:', getError);
