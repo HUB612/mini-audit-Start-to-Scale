@@ -314,10 +314,10 @@ impl App {
         }
 
         // Valider le téléphone si fourni
-        if !self.form_data.contact_phone.trim().is_empty() {
-            if !self.is_valid_phone(&self.form_data.contact_phone) {
-                return Some("Format de téléphone invalide. Format attendu : +33 6 12 34 56 78 ou 06 12 34 56 78".to_string());
-            }
+        if !self.form_data.contact_phone.trim().is_empty()
+            && !self.is_valid_phone(&self.form_data.contact_phone)
+        {
+            return Some("Format de téléphone invalide. Format attendu : +33 6 12 34 56 78 ou 06 12 34 56 78".to_string());
         }
 
         None
