@@ -138,6 +138,7 @@ body {
 .logo {
     width: 100%;
     text-align: center;
+    margin-top: 0;
     margin-bottom: 1.5rem;
 }
 
@@ -175,6 +176,7 @@ body {
     height: auto;
     min-height: auto;
     overflow: visible;
+    padding-top: 2rem;
 }
 
 /* Pages avec questions-header (questions, résultats et contact) */
@@ -183,7 +185,7 @@ body {
 .screen.active .container.contact-container {
     align-items: stretch;
     justify-content: flex-start;
-    padding-top: 1.5rem;
+    padding-top: 2rem;
 }
 
 .screen.active .container.questions-container > *,
@@ -1246,7 +1248,7 @@ body {
     }
 
     .screen.active .container.contact-container {
-        padding-top: 1rem;
+        padding-top: 1.5rem;
         padding-bottom: 2rem;
     }
 
