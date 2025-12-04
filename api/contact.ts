@@ -21,7 +21,7 @@ export default async function handler(
   const brevoApiKey = process.env.BREVO_API_KEY;
   const brevoSenderEmail = process.env.BREVO_SENDER_EMAIL || 'noreply@hub612.com';
   const brevoSenderName = process.env.BREVO_SENDER_NAME || 'Hub612';
-  const brevoRecipientEmail = process.env.BREVO_RECIPIENT_EMAIL;
+  const brevoListId = process.env.BREVO_LIST_ID;
 
   // Vérifier que les variables d'environnement sont définies
   if (!brevoApiKey) {
@@ -29,8 +29,8 @@ export default async function handler(
     return response.status(500).json({ error: 'Server configuration error' });
   }
 
-  if (!brevoRecipientEmail) {
-    console.error('BREVO_RECIPIENT_EMAIL is not set');
+  if (!brevoListId) {
+    console.error('BREVO_LIST_ID is not set');
     return response.status(500).json({ error: 'Server configuration error' });
   }
 
@@ -45,61 +45,107 @@ export default async function handler(
       });
     }
 
-    // Construire le contenu de l'email
-    const emailContent = `
-      <h2>Nouvelle demande de contact - Start to Scale</h2>
-      <p><strong>Nom de la startup:</strong> ${escapeHtml(formData.startup_name)}</p>
-      <p><strong>Nom du contact:</strong> ${escapeHtml(formData.contact_name)}</p>
-      <p><strong>Email:</strong> ${escapeHtml(formData.contact_email)}</p>
-      ${formData.contact_phone ? `<p><strong>Téléphone:</strong> ${escapeHtml(formData.contact_phone)}</p>` : ''}
-      ${formData.message ? `<p><strong>Message:</strong></p><p>${escapeHtml(formData.message)}</p>` : ''}
-    `;
-
-    // Préparer la requête pour Brevo
-    const brevoPayload = {
-      sender: {
-        name: brevoSenderName,
-        email: brevoSenderEmail,
+    // 1. Ajouter le contact à la liste Brevo
+    const contactPayload = {
+      email: formData.contact_email,
+      attributes: {
+        PRENOM: formData.contact_name.split(' ')[0] || formData.contact_name,
+        NOM: formData.contact_name.split(' ').slice(1).join(' ') || '',
+        STARTUP: formData.startup_name,
+        TELEPHONE: formData.contact_phone || '',
+        MESSAGE: formData.message || '',
       },
-      to: [
-        {
-          email: brevoRecipientEmail,
-        },
-      ],
-      subject: `Nouvelle demande de contact - ${formData.startup_name}`,
-      htmlContent: emailContent,
-      replyTo: {
-        email: formData.contact_email,
-        name: formData.contact_name,
-      },
+      listIds: [parseInt(brevoListId, 10)],
+      updateEnabled: true, // Met à jour le contact s'il existe déjà
     };
 
-    // Envoyer l'email via l'API Brevo
-    const brevoResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+    const addContactResponse = await fetch('https://api.brevo.com/v3/contacts', {
       method: 'POST',
       headers: {
         'accept': 'application/json',
         'api-key': brevoApiKey,
         'content-type': 'application/json',
       },
-      body: JSON.stringify(brevoPayload),
+      body: JSON.stringify(contactPayload),
     });
 
-    if (!brevoResponse.ok) {
-      const errorText = await brevoResponse.text();
-      console.error('Brevo API error:', errorText);
+    // Ne pas échouer si le contact existe déjà (code 400 avec "duplicate_parameter")
+    let contactAdded = false;
+    if (!addContactResponse.ok) {
+      const errorText = await addContactResponse.text();
+      try {
+        const errorData = JSON.parse(errorText);
+        
+        // Si c'est une erreur de duplication, on continue (le contact existe déjà)
+        if (errorData.code === 'duplicate_parameter') {
+          console.log('Contact already exists in list, continuing...');
+          contactAdded = true; // Le contact existe déjà, c'est OK
+        } else {
+          console.error('Brevo API error adding contact:', errorText);
+          // On continue quand même pour envoyer l'email de remerciement
+        }
+      } catch (parseError) {
+        console.error('Error parsing Brevo API error response:', parseError);
+        // On continue quand même pour envoyer l'email de remerciement
+      }
+    } else {
+      contactAdded = true;
+    }
+
+    // 2. Envoyer un email de remerciement au contact
+    const thankYouEmailContent = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+        <h2 style="color: #333;">Merci pour votre intérêt !</h2>
+        <p>Bonjour ${escapeHtml(formData.contact_name)},</p>
+        <p>Nous avons bien reçu votre demande de contact concernant <strong>${escapeHtml(formData.startup_name)}</strong>.</p>
+        <p>Nous vous remercions de votre intérêt pour notre programme <strong>Start to Scale</strong>.</p>
+        <p>Notre équipe va examiner votre demande et reviendra vers vous rapidement pour un premier échange.</p>
+        <p>En attendant, n'hésitez pas à consulter notre site pour en savoir plus sur nos services.</p>
+        <p style="margin-top: 30px;">Cordialement,<br>L'équipe Hub612</p>
+      </div>
+    `;
+
+    const thankYouEmailPayload = {
+      sender: {
+        name: brevoSenderName,
+        email: brevoSenderEmail,
+      },
+      to: [
+        {
+          email: formData.contact_email,
+          name: formData.contact_name,
+        },
+      ],
+      subject: 'Merci pour votre demande - Hub612 Start to Scale',
+      htmlContent: thankYouEmailContent,
+    };
+
+    const emailResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
+      method: 'POST',
+      headers: {
+        'accept': 'application/json',
+        'api-key': brevoApiKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(thankYouEmailPayload),
+    });
+
+    if (!emailResponse.ok) {
+      const errorText = await emailResponse.text();
+      console.error('Brevo API error sending thank you email:', errorText);
       return response.status(500).json({ 
-        error: 'Failed to send email',
+        error: 'Failed to send thank you email',
         details: errorText 
       });
     }
 
-    const brevoResult = await brevoResponse.json();
+    const emailResult = await emailResponse.json();
 
     // Répondre avec succès
     return response.status(200).json({ 
       success: true,
-      messageId: brevoResult.messageId 
+      messageId: emailResult.messageId,
+      contactAdded: contactAdded,
     });
 
   } catch (error) {
