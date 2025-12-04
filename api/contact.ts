@@ -45,19 +45,90 @@ export default async function handler(
       });
     }
 
-    // 1. Ajouter le contact à la liste Brevo
-    const contactPayload = {
+    // Extraire prénom et nom de manière plus intelligente
+    const nameParts = formData.contact_name.trim().split(/\s+/);
+    const firstName = nameParts[0] || formData.contact_name;
+    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+
+    // 1. Créer ou récupérer l'entreprise dans Brevo
+    let companyId: number | null = null;
+    
+    try {
+      // Créer l'entreprise directement (Brevo gère les doublons)
+      const createCompanyPayload = {
+        name: formData.startup_name,
+        attributes: {},
+      };
+
+      const createCompanyResponse = await fetch('https://api.brevo.com/v3/companies', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': brevoApiKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(createCompanyPayload),
+      });
+
+      if (createCompanyResponse.ok) {
+        const newCompany = await createCompanyResponse.json();
+        companyId = newCompany.id;
+        console.log(`Company created/found: ${formData.startup_name} (ID: ${companyId})`);
+      } else {
+        // Si l'entreprise existe déjà, essayer de la récupérer par recherche
+        const errorText = await createCompanyResponse.text();
+        console.log('Company may already exist, attempting search...');
+        
+        // Recherche simplifiée par nom
+        const searchResponse = await fetch(
+          `https://api.brevo.com/v3/companies?limit=50`,
+          {
+            method: 'GET',
+            headers: {
+              'accept': 'application/json',
+              'api-key': brevoApiKey,
+            },
+          }
+        );
+
+        if (searchResponse.ok) {
+          const searchData = await searchResponse.json();
+          const foundCompany = searchData.companies?.find(
+            (c: any) => c.name?.toLowerCase() === formData.startup_name.toLowerCase()
+          );
+          if (foundCompany) {
+            companyId = foundCompany.id;
+            console.log(`Company found: ${formData.startup_name} (ID: ${companyId})`);
+          }
+        }
+      }
+    } catch (companyError) {
+      console.error('Error processing company:', companyError);
+      // On continue même si la gestion de l'entreprise échoue
+    }
+
+    // 2. Ajouter le contact à la liste Brevo avec toutes les informations
+    const contactPayload: any = {
       email: formData.contact_email,
       attributes: {
-        PRENOM: formData.contact_name.split(' ')[0] || formData.contact_name,
-        NOM: formData.contact_name.split(' ').slice(1).join(' ') || '',
+        FIRSTNAME: firstName,
+        LASTNAME: lastName,
+        PRENOM: firstName, // Attribut personnalisé si utilisé
+        NOM: lastName, // Attribut personnalisé si utilisé
         STARTUP: formData.startup_name,
+        COMPANY: formData.startup_name, // Attribut company standard
+        SMS: formData.contact_phone || '',
         TELEPHONE: formData.contact_phone || '',
         MESSAGE: formData.message || '',
       },
       listIds: [parseInt(brevoListId, 10)],
       updateEnabled: true, // Met à jour le contact s'il existe déjà
     };
+
+    // Ajouter l'entreprise si elle a été créée/trouvée
+    if (companyId) {
+      contactPayload.companyId = companyId;
+    }
 
     const addContactResponse = await fetch('https://api.brevo.com/v3/contacts', {
       method: 'POST',
@@ -71,6 +142,8 @@ export default async function handler(
 
     // Ne pas échouer si le contact existe déjà (code 400 avec "duplicate_parameter")
     let contactAdded = false;
+    let contactId: number | null = null;
+
     if (!addContactResponse.ok) {
       const errorText = await addContactResponse.text();
       try {
@@ -78,8 +151,29 @@ export default async function handler(
         
         // Si c'est une erreur de duplication, on continue (le contact existe déjà)
         if (errorData.code === 'duplicate_parameter') {
-          console.log('Contact already exists in list, continuing...');
-          contactAdded = true; // Le contact existe déjà, c'est OK
+          console.log('Contact already exists, updating...');
+          contactAdded = true;
+          
+          // Essayer de récupérer l'ID du contact existant pour l'associer à l'entreprise
+          try {
+            const getContactResponse = await fetch(
+              `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+              {
+                method: 'GET',
+                headers: {
+                  'accept': 'application/json',
+                  'api-key': brevoApiKey,
+                },
+              }
+            );
+            
+            if (getContactResponse.ok) {
+              const contactData = await getContactResponse.json();
+              contactId = contactData.id;
+            }
+          } catch (getError) {
+            console.error('Error getting contact ID:', getError);
+          }
         } else {
           console.error('Brevo API error adding contact:', errorText);
           // On continue quand même pour envoyer l'email de remerciement
@@ -89,7 +183,64 @@ export default async function handler(
         // On continue quand même pour envoyer l'email de remerciement
       }
     } else {
+      const contactResult = await addContactResponse.json();
       contactAdded = true;
+      contactId = contactResult.id;
+    }
+
+    // 3. Associer le contact à l'entreprise si nécessaire
+    if (companyId) {
+      try {
+        // Si on a l'ID du contact, l'associer directement
+        if (contactId) {
+          const linkContactResponse = await fetch(
+            `https://api.brevo.com/v3/companies/${companyId}/contacts`,
+            {
+              method: 'POST',
+              headers: {
+                'accept': 'application/json',
+                'api-key': brevoApiKey,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({
+                linkContactIds: [contactId],
+              }),
+            }
+          );
+
+          if (!linkContactResponse.ok) {
+            const errorText = await linkContactResponse.text();
+            console.error('Error linking contact to company:', errorText);
+          } else {
+            console.log(`Contact ${contactId} linked to company ${companyId}`);
+          }
+        } else {
+          // Sinon, utiliser l'email pour associer le contact
+          const linkByEmailResponse = await fetch(
+            `https://api.brevo.com/v3/companies/${companyId}/contacts`,
+            {
+              method: 'POST',
+              headers: {
+                'accept': 'application/json',
+                'api-key': brevoApiKey,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify({
+                linkContactIds: [formData.contact_email],
+              }),
+            }
+          );
+
+          if (!linkByEmailResponse.ok) {
+            const errorText = await linkByEmailResponse.text();
+            console.error('Error linking contact to company by email:', errorText);
+          } else {
+            console.log(`Contact ${formData.contact_email} linked to company ${companyId}`);
+          }
+        }
+      } catch (linkError) {
+        console.error('Error linking contact to company:', linkError);
+      }
     }
 
     // 2. Envoyer un email de remerciement au contact
