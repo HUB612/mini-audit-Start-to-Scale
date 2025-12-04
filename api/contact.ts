@@ -329,20 +329,42 @@ export default async function handler(
 }
 
 // Fonction utilitaire pour nettoyer et valider le numéro de téléphone
+// Brevo exige le format international : + suivi de l'indicatif pays et du numéro, sans séparateurs
+// Exemple : +33123456789 (pour un numéro français)
 function cleanPhoneNumber(phone: string | undefined): string | null {
   if (!phone) {
     return null;
   }
   
-  // Nettoyer le numéro : garder uniquement les chiffres, +, espaces et tirets
-  const cleaned = phone.trim().replace(/[^\d+\s-]/g, '');
+  // Extraire uniquement les chiffres et le signe +
+  const cleaned = phone.trim().replace(/[^\d+]/g, '');
   
   // Si le numéro est vide après nettoyage, retourner null
-  if (!cleaned || cleaned.length < 3) {
+  if (!cleaned || cleaned.length < 4) {
     return null;
   }
   
-  return cleaned;
+  // Si le numéro commence déjà par +, le retourner tel quel
+  if (cleaned.startsWith('+')) {
+    // Valider qu'il y a au moins l'indicatif pays (minimum 2 chiffres après le +)
+    if (cleaned.length < 4) {
+      return null;
+    }
+    return cleaned;
+  }
+  
+  // Si le numéro commence par 00 (format international alternatif), remplacer par +
+  if (cleaned.startsWith('00')) {
+    return '+' + cleaned.substring(2);
+  }
+  
+  // Si le numéro commence par 0 (format français), remplacer par +33
+  if (cleaned.startsWith('0')) {
+    return '+33' + cleaned.substring(1);
+  }
+  
+  // Sinon, ajouter + devant (supposant que c'est déjà un numéro international sans le +)
+  return '+' + cleaned;
 }
 
 // Fonction utilitaire pour échapper le HTML
