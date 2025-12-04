@@ -13,7 +13,9 @@ export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
 ) {
-  // Vérifier que la méthode est POST
+  console.log('=== CONTACT FORM HANDLER START ===');
+  console.log(`Method: ${request.method}`);
+  
   if (request.method !== 'POST') {
     return response.status(405).json({ error: 'Method not allowed' });
   }
@@ -24,64 +26,74 @@ export default async function handler(
   const brevoSenderName = process.env.BREVO_SENDER_NAME || 'Hub612';
   const brevoListId = process.env.BREVO_LIST_ID;
 
-  // Vérifier que les variables d'environnement sont définies
+  console.log('Environment variables check:');
+  console.log(`  BREVO_API_KEY: ${brevoApiKey ? 'SET' : 'MISSING'}`);
+  console.log(`  BREVO_SENDER_EMAIL: ${brevoSenderEmail}`);
+  console.log(`  BREVO_SENDER_NAME: ${brevoSenderName}`);
+  console.log(`  BREVO_LIST_ID: ${brevoListId || 'MISSING'}`);
+
   if (!brevoApiKey) {
-    console.error('BREVO_API_KEY is not set');
+    console.error('✗ BREVO_API_KEY is not set');
     return response.status(500).json({ error: 'Server configuration error' });
   }
 
   if (!brevoListId) {
-    console.error('BREVO_LIST_ID is not set');
+    console.error('✗ BREVO_LIST_ID is not set');
     return response.status(500).json({ error: 'Server configuration error' });
   }
 
   try {
     // Récupérer les données du formulaire
     const formData: ContactFormData = request.body;
+    console.log('Form data received:', JSON.stringify(formData, null, 2));
 
     // Valider les champs requis
     if (!formData.startup_name || !formData.contact_firstname || !formData.contact_lastname || !formData.contact_email) {
+      console.error('✗ Missing required fields');
       return response.status(400).json({ 
         error: 'Missing required fields: startup_name, contact_firstname, contact_lastname, contact_email' 
       });
     }
 
-    // Utiliser directement les champs séparés
     const firstName = formData.contact_firstname.trim();
     const lastName = formData.contact_lastname.trim();
+    const startupName = formData.startup_name.trim();
 
-    console.log(`Contact: FirstName: "${firstName}", LastName: "${lastName}"`);
-
-    // 1. Créer le contact d'abord
-    let contactId: number | null = null;
+    console.log(`\n=== STEP 1: CREATE CONTACT ===`);
+    console.log(`Contact: FirstName: "${firstName}", LastName: "${lastName}", Email: "${formData.contact_email}"`);
 
     // Nettoyer le numéro de téléphone
     const cleanedPhone = cleanPhoneNumber(formData.contact_phone);
+    if (cleanedPhone) {
+      console.log(`Phone cleaned: ${cleanedPhone}`);
+    }
 
-    // Ajouter le contact à la liste Brevo avec toutes les informations
-    // Note: Brevo utilise FIRSTNAME et LASTNAME comme attributs standards
+    // Préparer les attributs du contact
     const contactAttributes: any = {
       FIRSTNAME: firstName,
       LASTNAME: lastName,
-      STARTUP: formData.startup_name,
-      COMPANY: formData.startup_name, // Attribut company standard
+      STARTUP: startupName,
       MESSAGE: formData.message || '',
     };
     
-    console.log(`Contact attributes:`, JSON.stringify(contactAttributes, null, 2));
-
-    // Ajouter le téléphone uniquement s'il est valide
     if (cleanedPhone) {
       contactAttributes.SMS = cleanedPhone;
       contactAttributes.TELEPHONE = cleanedPhone;
     }
 
+    console.log(`Contact attributes:`, JSON.stringify(contactAttributes, null, 2));
+
     const contactPayload: any = {
       email: formData.contact_email,
       attributes: contactAttributes,
       listIds: [parseInt(brevoListId, 10)],
-      updateEnabled: true, // Met à jour le contact s'il existe déjà
+      updateEnabled: true,
     };
+
+    console.log(`Creating contact with payload:`, JSON.stringify(contactPayload, null, 2));
+
+    let contactId: number | null = null;
+    let contactAdded = false;
 
     const addContactResponse = await fetch('https://api.brevo.com/v3/contacts', {
       method: 'POST',
@@ -93,84 +105,78 @@ export default async function handler(
       body: JSON.stringify(contactPayload),
     });
 
-    // Ne pas échouer si le contact existe déjà (code 400 avec "duplicate_parameter")
-    let contactAdded = false;
+    const contactResponseStatus = addContactResponse.status;
+    const contactResponseText = await addContactResponse.text();
+    
+    console.log(`Contact creation response status: ${contactResponseStatus}`);
+    console.log(`Contact creation response body: ${contactResponseText}`);
 
     if (!addContactResponse.ok) {
-      const errorText = await addContactResponse.text();
       try {
-        const errorData = JSON.parse(errorText);
+        const errorData = JSON.parse(contactResponseText);
         
-        // Si c'est une erreur de duplication, on continue (le contact existe déjà)
         if (errorData.code === 'duplicate_parameter') {
-          console.log('Contact already exists, updating...');
+          console.log('⚠ Contact already exists, retrieving ID...');
           contactAdded = true;
           
-          // Essayer de récupérer l'ID du contact existant pour l'associer à l'entreprise
-          try {
-            const getContactResponse = await fetch(
+          const getContactResponse = await fetch(
+            `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+            {
+              method: 'GET',
+              headers: {
+                'accept': 'application/json',
+                'api-key': brevoApiKey,
+              },
+            }
+          );
+          
+          if (getContactResponse.ok) {
+            const contactData = await getContactResponse.json();
+            contactId = contactData.id;
+            console.log(`✓ Contact ID retrieved: ${contactId}`);
+            
+            // Mettre à jour les attributs
+            const updatePayload = { attributes: contactAttributes };
+            const updateResponse = await fetch(
               `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
               {
-                method: 'GET',
+                method: 'PUT',
                 headers: {
                   'accept': 'application/json',
                   'api-key': brevoApiKey,
+                  'content-type': 'application/json',
                 },
+                body: JSON.stringify(updatePayload),
               }
             );
             
-            if (getContactResponse.ok) {
-              const contactData = await getContactResponse.json();
-              contactId = contactData.id;
-              
-              // Mettre à jour le contact existant avec les attributs
-              // Note: On ne peut pas mettre à jour le companyId via PUT /contacts
-              // Il faut utiliser l'endpoint /companies/{id}/contacts pour la liaison
-              if (Object.keys(contactAttributes).length > 0) {
-                const updatePayload: any = {
-                  attributes: contactAttributes,
-                };
-                
-                const updateContactResponse = await fetch(
-                  `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
-                  {
-                    method: 'PUT',
-                    headers: {
-                      'accept': 'application/json',
-                      'api-key': brevoApiKey,
-                      'content-type': 'application/json',
-                    },
-                    body: JSON.stringify(updatePayload),
-                  }
-                );
-                
-                if (updateContactResponse.ok) {
-                  console.log(`Contact ${contactId} updated with attributes`);
-                } else {
-                  const updateErrorText = await updateContactResponse.text();
-                  console.error('Error updating contact:', updateErrorText);
-                }
-              }
+            if (updateResponse.ok) {
+              console.log(`✓ Contact attributes updated`);
+            } else {
+              const updateError = await updateResponse.text();
+              console.error(`✗ Error updating contact: ${updateError}`);
             }
-          } catch (getError) {
-            console.error('Error getting contact ID:', getError);
+          } else {
+            console.error(`✗ Failed to retrieve existing contact`);
           }
         } else {
-          console.error('Brevo API error adding contact:', errorText);
-          // On continue quand même pour envoyer l'email de remerciement
+          console.error(`✗ Failed to create contact: ${contactResponseText}`);
         }
       } catch (parseError) {
-        console.error('Error parsing Brevo API error response:', parseError);
-        // On continue quand même pour envoyer l'email de remerciement
+        console.error(`✗ Error parsing contact creation response:`, parseError);
       }
     } else {
-      const contactResult = await addContactResponse.json();
-      contactAdded = true;
-      contactId = contactResult.id;
-      console.log(`✓ New contact created: ${formData.contact_email} (ID: ${contactId})`);
+      try {
+        const contactResult = JSON.parse(contactResponseText);
+        contactAdded = true;
+        contactId = contactResult.id;
+        console.log(`✓✓✓ Contact created successfully: ID ${contactId}`);
+      } catch (parseError) {
+        console.error(`✗ Error parsing contact creation response:`, parseError);
+      }
     }
 
-    // S'assurer qu'on a toujours le contactId (récupérer via GET si nécessaire)
+    // Récupérer contactId si nécessaire
     if (!contactId && contactAdded) {
       try {
         const getContactResponse = await fetch(
@@ -187,170 +193,172 @@ export default async function handler(
         if (getContactResponse.ok) {
           const contactData = await getContactResponse.json();
           contactId = contactData.id;
-          console.log(`✓ Contact ID retrieved: ${contactId}`);
+          console.log(`✓ Contact ID retrieved via GET: ${contactId}`);
         }
       } catch (getError) {
-        console.error('Error retrieving contact ID:', getError);
+        console.error(`✗ Error retrieving contact ID:`, getError);
       }
     }
 
-    // 2. Créer ou récupérer l'entreprise dans Brevo
+    if (!contactId) {
+      console.error(`✗✗✗ CRITICAL: No contactId available, cannot proceed with company linking`);
+    }
+
+    console.log(`\n=== STEP 2: CREATE COMPANY ===`);
     let companyId: string | null = null;
     
     if (contactId) {
-      try {
-        // Créer l'entreprise directement (Brevo gère les doublons)
-        const createCompanyPayload = {
-          name: formData.startup_name,
-          attributes: {},
-        };
+      const createCompanyPayload = {
+        name: startupName,
+        attributes: {},
+      };
 
-        const createCompanyResponse = await fetch('https://api.brevo.com/v3/companies', {
-          method: 'POST',
-          headers: {
-            'accept': 'application/json',
-            'api-key': brevoApiKey,
-            'content-type': 'application/json',
-          },
-          body: JSON.stringify(createCompanyPayload),
-        });
+      console.log(`Creating company with payload:`, JSON.stringify(createCompanyPayload, null, 2));
 
-        if (createCompanyResponse.ok) {
-          const newCompany = await createCompanyResponse.json();
+      const createCompanyResponse = await fetch('https://api.brevo.com/v3/companies', {
+        method: 'POST',
+        headers: {
+          'accept': 'application/json',
+          'api-key': brevoApiKey,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(createCompanyPayload),
+      });
+
+      const companyResponseStatus = createCompanyResponse.status;
+      const companyResponseText = await createCompanyResponse.text();
+      
+      console.log(`Company creation response status: ${companyResponseStatus}`);
+      console.log(`Company creation response body: ${companyResponseText}`);
+
+      if (createCompanyResponse.ok) {
+        try {
+          const newCompany = JSON.parse(companyResponseText);
           companyId = newCompany.id;
-          console.log(`✓ Company created: ${formData.startup_name} (ID: ${companyId})`);
-        } else {
-          // Si l'entreprise existe déjà, essayer de la récupérer par recherche
-          const errorText = await createCompanyResponse.text();
-          let errorData: any = null;
-          try {
-            errorData = JSON.parse(errorText);
-          } catch (e) {
-            // Ignorer l'erreur de parsing
-          }
-          
-          console.log('Company creation failed, attempting search...', errorText);
-          
-          // Recherche par nom avec pagination (API Brevo v3)
-          let found = false;
-          let offset = 0;
-          const limit = 50;
-          
-          while (!found && offset < 200) {
-            const searchResponse = await fetch(
-              `https://api.brevo.com/v3/companies?limit=${limit}&offset=${offset}`,
-              {
-                method: 'GET',
-                headers: {
-                  'accept': 'application/json',
-                  'api-key': brevoApiKey,
-                },
-              }
-            );
-
-            if (searchResponse.ok) {
-              const searchData = await searchResponse.json();
-              const foundCompany = searchData.companies?.find(
-                (c: any) => c.name?.toLowerCase() === formData.startup_name.toLowerCase()
-              );
-              if (foundCompany) {
-                companyId = foundCompany.id;
-                console.log(`✓ Company found: ${formData.startup_name} (ID: ${companyId})`);
-                found = true;
-                break;
-              }
-              
-              if (!searchData.companies || searchData.companies.length < limit) {
-                break;
-              }
-              
-              offset += limit;
-            } else {
-              const searchErrorText = await searchResponse.text();
-              console.error('Error searching for company:', searchErrorText);
-              break;
-            }
-          }
-          
-          if (!found) {
-            console.log(`Company not found: ${formData.startup_name} - will continue without company association`);
-          }
+          console.log(`✓✓✓ Company created successfully: ID ${companyId}`);
+        } catch (parseError) {
+          console.error(`✗ Error parsing company creation response:`, parseError);
         }
-      } catch (companyError) {
-        console.error('Error processing company:', companyError);
-      }
-    }
-
-    // 3. Lier le contact à l'entreprise via PATCH sur l'entreprise
-    // Selon la documentation Brevo: https://developers.brevo.com/reference/patch_companies-id
-    // Il faut faire un PATCH sur l'entreprise avec linkContactIds
-    console.log(`Linking contact ${contactId} to company ${companyId} via PATCH...`);
-    if (companyId && contactId) {
-      try {
-        const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
+      } else {
+        console.log(`⚠ Company creation failed, searching for existing company...`);
         
-        if (isNaN(contactIdNum)) {
-          console.error(`✗ Invalid contactId: ${contactId} (not a number)`);
-        } else {
-          const patchPayload = {
-            linkContactIds: [contactIdNum],
-          };
-          
-          console.log(`PATCH payload:`, JSON.stringify(patchPayload));
-          
-          const patchCompanyResponse = await fetch(
-            `https://api.brevo.com/v3/companies/${companyId}`,
+        // Rechercher l'entreprise existante
+        let found = false;
+        let offset = 0;
+        const limit = 50;
+        
+        while (!found && offset < 200) {
+          const searchResponse = await fetch(
+            `https://api.brevo.com/v3/companies?limit=${limit}&offset=${offset}`,
             {
-              method: 'PATCH',
+              method: 'GET',
               headers: {
                 'accept': 'application/json',
                 'api-key': brevoApiKey,
-                'content-type': 'application/json',
               },
-              body: JSON.stringify(patchPayload),
             }
           );
 
-          const responseStatus = patchCompanyResponse.status;
-          const responseText = await patchCompanyResponse.text();
-          
-          console.log(`PATCH response status: ${responseStatus}`);
-          console.log(`PATCH response body: ${responseText}`);
-
-          if (patchCompanyResponse.ok) {
-            console.log(`✓✓✓ SUCCESS: Contact ${contactIdNum} linked to company ${companyId} via PATCH`);
-          } else {
-            try {
-              const errorData = JSON.parse(responseText);
-              console.error(`✗✗✗ FAILED to link contact to company:`);
-              console.error(`  Status: ${responseStatus}`);
-              console.error(`  Error code: ${errorData.code}`);
-              console.error(`  Error message: ${errorData.message}`);
-              console.error(`  Full error: ${responseText}`);
-            } catch (parseError) {
-              console.error(`✗✗✗ FAILED to link contact to company (non-JSON response):`);
-              console.error(`  Status: ${responseStatus}`);
-              console.error(`  Response: ${responseText}`);
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            const foundCompany = searchData.companies?.find(
+              (c: any) => c.name?.toLowerCase() === startupName.toLowerCase()
+            );
+            if (foundCompany) {
+              companyId = foundCompany.id;
+              console.log(`✓ Company found: ID ${companyId}`);
+              found = true;
+              break;
             }
+            
+            if (!searchData.companies || searchData.companies.length < limit) {
+              break;
+            }
+            
+            offset += limit;
+          } else {
+            const searchError = await searchResponse.text();
+            console.error(`✗ Error searching for company: ${searchError}`);
+            break;
           }
         }
-      } catch (linkError) {
-        console.error('✗ Error linking contact to company:', linkError);
+        
+        if (!found) {
+          console.warn(`⚠ Company not found: ${startupName}`);
+        }
       }
-    } else if (companyId && !contactId) {
-      console.warn(`✗ Cannot link contact to company: companyId=${companyId} but contactId is null`);
-    } else if (!companyId && contactId) {
-      console.log(`ℹ No company to link: contactId=${contactId} but no companyId available`);
+    } else {
+      console.warn(`⚠ Skipping company creation: no contactId available`);
     }
 
-    // 4. Envoyer un email de remerciement au contact
-    console.log(`Preparing to send thank you email to ${formData.contact_email}...`);
+    console.log(`\n=== STEP 3: LINK CONTACT TO COMPANY ===`);
+    if (companyId && contactId) {
+      const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
+      
+      if (isNaN(contactIdNum)) {
+        console.error(`✗✗✗ Invalid contactId: ${contactId} (not a number)`);
+      } else {
+        const patchPayload = {
+          linkContactIds: [contactIdNum],
+        };
+        
+        console.log(`Patching company ${companyId} with payload:`, JSON.stringify(patchPayload, null, 2));
+        console.log(`URL: https://api.brevo.com/v3/companies/${companyId}`);
+
+        const patchCompanyResponse = await fetch(
+          `https://api.brevo.com/v3/companies/${companyId}`,
+          {
+            method: 'PATCH',
+            headers: {
+              'accept': 'application/json',
+              'api-key': brevoApiKey,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify(patchPayload),
+          }
+        );
+
+        const patchStatus = patchCompanyResponse.status;
+        const patchText = await patchCompanyResponse.text();
+        
+        console.log(`PATCH response status: ${patchStatus}`);
+        console.log(`PATCH response body: ${patchText}`);
+
+        if (patchCompanyResponse.ok) {
+          console.log(`✓✓✓ SUCCESS: Contact ${contactIdNum} linked to company ${companyId}`);
+        } else {
+          try {
+            const errorData = JSON.parse(patchText);
+            console.error(`✗✗✗ FAILED to link contact to company:`);
+            console.error(`  Status: ${patchStatus}`);
+            console.error(`  Error code: ${errorData.code}`);
+            console.error(`  Error message: ${errorData.message}`);
+          } catch (parseError) {
+            console.error(`✗✗✗ FAILED to link contact to company (non-JSON):`);
+            console.error(`  Status: ${patchStatus}`);
+            console.error(`  Response: ${patchText}`);
+          }
+        }
+      }
+    } else {
+      if (!companyId) {
+        console.warn(`⚠ Cannot link: companyId is null`);
+      }
+      if (!contactId) {
+        console.warn(`⚠ Cannot link: contactId is null`);
+      }
+    }
+
+    console.log(`\n=== STEP 4: SEND THANK YOU EMAIL ===`);
+    console.log(`Preparing email to: ${formData.contact_email}`);
+    console.log(`Sender: ${brevoSenderName} <${brevoSenderEmail}>`);
+
     const contactFullName = `${firstName} ${lastName}`.trim();
     const thankYouEmailContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #333;">Merci pour votre intérêt !</h2>
         <p>Bonjour ${escapeHtml(contactFullName)},</p>
-        <p>Nous avons bien reçu votre demande de contact concernant <strong>${escapeHtml(formData.startup_name)}</strong>.</p>
+        <p>Nous avons bien reçu votre demande de contact concernant <strong>${escapeHtml(startupName)}</strong>.</p>
         <p>Nous vous remercions de votre intérêt pour notre programme <strong>Start to Scale</strong>.</p>
         <p>Notre équipe va examiner votre demande et reviendra vers vous rapidement pour un premier échange.</p>
         <p>En attendant, n'hésitez pas à consulter notre site pour en savoir plus sur nos services.</p>
@@ -373,7 +381,11 @@ export default async function handler(
       htmlContent: thankYouEmailContent,
     };
 
-    console.log(`Sending email via Brevo SMTP API...`);
+    console.log(`Email payload:`, JSON.stringify({
+      ...thankYouEmailPayload,
+      htmlContent: '[HTML content]',
+    }, null, 2));
+
     const emailResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -384,45 +396,55 @@ export default async function handler(
       body: JSON.stringify(thankYouEmailPayload),
     });
 
-    const emailResponseStatus = emailResponse.status;
-    const emailResponseText = await emailResponse.text();
+    const emailStatus = emailResponse.status;
+    const emailText = await emailResponse.text();
+    
+    console.log(`Email response status: ${emailStatus}`);
+    console.log(`Email response body: ${emailText}`);
 
     if (!emailResponse.ok) {
       console.error(`✗✗✗ FAILED to send thank you email:`);
-      console.error(`  Status: ${emailResponseStatus}`);
-      console.error(`  Response: ${emailResponseText}`);
+      console.error(`  Status: ${emailStatus}`);
+      console.error(`  Response: ${emailText}`);
       return response.status(500).json({ 
         error: 'Failed to send thank you email',
-        details: emailResponseText 
+        details: emailText 
       });
     }
 
     try {
-      const emailResult = await JSON.parse(emailResponseText);
-      console.log(`✓✓✓ SUCCESS: Thank you email sent successfully`);
+      const emailResult = JSON.parse(emailText);
+      console.log(`✓✓✓ SUCCESS: Thank you email sent`);
       console.log(`  Message ID: ${emailResult.messageId}`);
       console.log(`  To: ${formData.contact_email}`);
 
-      // Répondre avec succès
+      console.log(`\n=== CONTACT FORM HANDLER END ===`);
       return response.status(200).json({ 
         success: true,
         messageId: emailResult.messageId,
         contactAdded: contactAdded,
+        contactId: contactId,
+        companyId: companyId,
         companyLinked: companyId && contactId ? true : false,
       });
     } catch (parseError) {
-      console.error(`Error parsing email response:`, parseError);
-      console.log(`Email response text: ${emailResponseText}`);
-      // Répondre quand même avec succès si le statut est OK
+      console.error(`✗ Error parsing email response:`, parseError);
+      console.log(`Email response text: ${emailText}`);
+      
+      console.log(`\n=== CONTACT FORM HANDLER END ===`);
       return response.status(200).json({ 
         success: true,
         contactAdded: contactAdded,
+        contactId: contactId,
+        companyId: companyId,
         companyLinked: companyId && contactId ? true : false,
       });
     }
 
   } catch (error) {
-    console.error('Error processing contact form:', error);
+    console.error(`\n✗✗✗ UNEXPECTED ERROR:`, error);
+    console.error(`Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
+    console.log(`\n=== CONTACT FORM HANDLER END (ERROR) ===`);
     return response.status(500).json({ 
       error: 'Internal server error',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -430,46 +452,35 @@ export default async function handler(
   }
 }
 
-// Fonction utilitaire pour nettoyer et valider le numéro de téléphone
-// Brevo exige le format international : + suivi de l'indicatif pays et du numéro, sans séparateurs
-// Exemple : +33123456789 (pour un numéro français)
 function cleanPhoneNumber(phone: string | undefined): string | null {
   if (!phone) {
     return null;
   }
   
-  // Extraire uniquement les chiffres et le signe +
   const cleaned = phone.trim().replace(/[^\d+]/g, '');
   
-  // Si le numéro est vide après nettoyage, retourner null
   if (!cleaned || cleaned.length < 4) {
     return null;
   }
   
-  // Si le numéro commence déjà par +, le retourner tel quel
   if (cleaned.startsWith('+')) {
-    // Valider qu'il y a au moins l'indicatif pays (minimum 2 chiffres après le +)
     if (cleaned.length < 4) {
       return null;
     }
     return cleaned;
   }
   
-  // Si le numéro commence par 00 (format international alternatif), remplacer par +
   if (cleaned.startsWith('00')) {
     return '+' + cleaned.substring(2);
   }
   
-  // Si le numéro commence par 0 (format français), remplacer par +33
   if (cleaned.startsWith('0')) {
     return '+33' + cleaned.substring(1);
   }
   
-  // Sinon, ajouter + devant (supposant que c'est déjà un numéro international sans le +)
   return '+' + cleaned;
 }
 
-// Fonction utilitaire pour échapper le HTML
 function escapeHtml(text: string): string {
   const map: { [key: string]: string } = {
     '&': '&amp;',
@@ -480,4 +491,3 @@ function escapeHtml(text: string): string {
   };
   return text.replace(/[&<>"']/g, (m) => map[m]);
 }
-
