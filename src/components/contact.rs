@@ -2,6 +2,79 @@ use crate::app::FormData;
 use wasm_bindgen::JsCast;
 use yew::prelude::*;
 
+// Fonction de validation d'email
+fn is_valid_email(email: &str) -> bool {
+    let email = email.trim();
+
+    if !email.contains('@') {
+        return false;
+    }
+
+    let parts: Vec<&str> = email.split('@').collect();
+    if parts.len() != 2 {
+        return false;
+    }
+
+    let local = parts[0];
+    let domain = parts[1];
+
+    if local.is_empty() || !domain.contains('.') {
+        return false;
+    }
+
+    if let Some(last_dot) = domain.rfind('.') {
+        if domain.len() - last_dot - 1 < 2 {
+            return false;
+        }
+    } else {
+        return false;
+    }
+
+    for c in local.chars() {
+        if !c.is_ascii_alphanumeric() && c != '.' && c != '_' && c != '-' && c != '+' && c != '%' {
+            return false;
+        }
+    }
+
+    for c in domain.chars() {
+        if !c.is_ascii_alphanumeric() && c != '.' && c != '-' {
+            return false;
+        }
+    }
+
+    true
+}
+
+// Fonction de validation de téléphone
+fn is_valid_phone(phone: &str) -> bool {
+    let phone = phone.trim();
+
+    if phone.is_empty() {
+        return true;
+    }
+
+    let digits: String = phone.chars().filter(|c| c.is_ascii_digit()).collect();
+
+    if digits.len() < 8 || digits.len() > 15 {
+        return false;
+    }
+
+    let valid_chars: Vec<char> = phone
+        .chars()
+        .filter(|c| {
+            c.is_ascii_digit()
+                || *c == '+'
+                || *c == ' '
+                || *c == '-'
+                || *c == '('
+                || *c == ')'
+                || *c == '.'
+        })
+        .collect();
+
+    valid_chars.len() == phone.chars().count()
+}
+
 #[derive(Properties, PartialEq)]
 pub struct Props {
     pub form_data: FormData,
@@ -160,7 +233,18 @@ pub fn ContactScreen(props: &Props) -> Html {
                                 value={props.form_data.contact_email.clone()}
                                 oninput={on_contact_email}
                                 required={true}
+                                pattern={r"[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}"}
+                                title="Format d'email invalide (exemple: nom@exemple.com)"
                             />
+                            {if !props.form_data.contact_email.is_empty() && !is_valid_email(&props.form_data.contact_email) {
+                                html! {
+                                    <span class="field-error" style="color: #c33; font-size: 0.875rem; display: block; margin-top: 0.25rem;">
+                                        {"Format d'email invalide"}
+                                    </span>
+                                }
+                            } else {
+                                html! {}
+                            }}
                         </div>
 
                         <div class="form-group">
@@ -170,7 +254,18 @@ pub fn ContactScreen(props: &Props) -> Html {
                                 id="contact-phone"
                                 value={props.form_data.contact_phone.clone()}
                                 oninput={on_contact_phone}
+                                pattern={r"[\d\s\+\-\(\)\.]{8,}"}
+                                title="Format de téléphone invalide (exemple: +33 6 12 34 56 78 ou 06 12 34 56 78)"
                             />
+                            {if !props.form_data.contact_phone.is_empty() && !is_valid_phone(&props.form_data.contact_phone) {
+                                html! {
+                                    <span class="field-error" style="color: #c33; font-size: 0.875rem; display: block; margin-top: 0.25rem;">
+                                        {"Format de téléphone invalide. Format attendu : +33 6 12 34 56 78 ou 06 12 34 56 78"}
+                                    </span>
+                                }
+                            } else {
+                                html! {}
+                            }}
                         </div>
 
                         <div class="form-group">

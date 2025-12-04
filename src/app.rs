@@ -107,6 +107,12 @@ impl Component for App {
                     return false;
                 }
 
+                // Valider les champs avant soumission
+                if let Some(validation_error) = self.validate_form() {
+                    self.form_error = Some(validation_error);
+                    return true;
+                }
+
                 self.form_submitting = true;
                 self.form_error = None;
 
@@ -285,6 +291,127 @@ impl App {
                 self.screen = Screen::Results;
             }
         }
+    }
+
+    fn validate_form(&self) -> Option<String> {
+        // Valider le nom de la startup
+        if self.form_data.startup_name.trim().is_empty() {
+            return Some("Le nom de la startup est requis".to_string());
+        }
+
+        // Valider le nom du contact
+        if self.form_data.contact_name.trim().is_empty() {
+            return Some("Votre nom est requis".to_string());
+        }
+
+        // Valider l'email
+        if self.form_data.contact_email.trim().is_empty() {
+            return Some("L'email est requis".to_string());
+        }
+
+        if !self.is_valid_email(&self.form_data.contact_email) {
+            return Some("Format d'email invalide".to_string());
+        }
+
+        // Valider le téléphone si fourni
+        if !self.form_data.contact_phone.trim().is_empty() {
+            if !self.is_valid_phone(&self.form_data.contact_phone) {
+                return Some("Format de téléphone invalide. Format attendu : +33 6 12 34 56 78 ou 06 12 34 56 78".to_string());
+            }
+        }
+
+        None
+    }
+
+    fn is_valid_email(&self, email: &str) -> bool {
+        let email = email.trim();
+
+        // Vérifier qu'il y a un @ et au moins un point après le @
+        if !email.contains('@') {
+            return false;
+        }
+
+        let parts: Vec<&str> = email.split('@').collect();
+        if parts.len() != 2 {
+            return false;
+        }
+
+        let local = parts[0];
+        let domain = parts[1];
+
+        // Vérifier que la partie locale n'est pas vide
+        if local.is_empty() {
+            return false;
+        }
+
+        // Vérifier que le domaine contient au moins un point
+        if !domain.contains('.') {
+            return false;
+        }
+
+        // Vérifier que le domaine a au moins 2 caractères après le dernier point
+        if let Some(last_dot) = domain.rfind('.') {
+            if domain.len() - last_dot - 1 < 2 {
+                return false;
+            }
+        } else {
+            return false;
+        }
+
+        // Vérifier les caractères valides dans la partie locale
+        for c in local.chars() {
+            if !c.is_ascii_alphanumeric()
+                && c != '.'
+                && c != '_'
+                && c != '-'
+                && c != '+'
+                && c != '%'
+            {
+                return false;
+            }
+        }
+
+        // Vérifier les caractères valides dans le domaine
+        for c in domain.chars() {
+            if !c.is_ascii_alphanumeric() && c != '.' && c != '-' {
+                return false;
+            }
+        }
+
+        true
+    }
+
+    fn is_valid_phone(&self, phone: &str) -> bool {
+        let phone = phone.trim();
+
+        // Si vide, c'est valide (champ optionnel)
+        if phone.is_empty() {
+            return true;
+        }
+
+        // Compter les chiffres dans le numéro
+        let digits: String = phone.chars().filter(|c| c.is_ascii_digit()).collect();
+
+        // Un numéro de téléphone doit avoir entre 8 et 15 chiffres
+        if digits.len() < 8 || digits.len() > 15 {
+            return false;
+        }
+
+        // Vérifier qu'il n'y a pas que des caractères invalides
+        let valid_chars: Vec<char> = phone
+            .chars()
+            .filter(|c| {
+                c.is_ascii_digit()
+                    || *c == '+'
+                    || *c == ' '
+                    || *c == '-'
+                    || *c == '('
+                    || *c == ')'
+                    || *c == '.'
+            })
+            .collect();
+
+        valid_chars.len() == phone.chars().count()
     }
 }
 
