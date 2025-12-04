@@ -165,10 +165,9 @@ export default async function handler(
       updateEnabled: true, // Met à jour le contact s'il existe déjà
     };
 
-    // Ajouter l'entreprise si elle a été créée/trouvée
-    if (companyId) {
-      contactPayload.companyId = companyId;
-    }
+    // Note: L'API Brevo ne permet pas d'associer directement un contact à une entreprise
+    // lors de la création. Il faut faire la liaison via l'endpoint /companies/{id}/contacts
+    // après la création du contact.
 
     const addContactResponse = await fetch('https://api.brevo.com/v3/contacts', {
       method: 'POST',
@@ -211,16 +210,13 @@ export default async function handler(
               const contactData = await getContactResponse.json();
               contactId = contactData.id;
               
-              // Mettre à jour le contact existant avec le companyId et les attributs
-              if (companyId || Object.keys(contactAttributes).length > 0) {
+              // Mettre à jour le contact existant avec les attributs
+              // Note: On ne peut pas mettre à jour le companyId via PUT /contacts
+              // Il faut utiliser l'endpoint /companies/{id}/contacts pour la liaison
+              if (Object.keys(contactAttributes).length > 0) {
                 const updatePayload: any = {
                   attributes: contactAttributes,
                 };
-                
-                // Ajouter le companyId si disponible
-                if (companyId) {
-                  updatePayload.companyId = companyId;
-                }
                 
                 const updateContactResponse = await fetch(
                   `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
@@ -236,7 +232,7 @@ export default async function handler(
                 );
                 
                 if (updateContactResponse.ok) {
-                  console.log(`Contact ${contactId} updated with company ${companyId}`);
+                  console.log(`Contact ${contactId} updated with attributes`);
                 } else {
                   const updateErrorText = await updateContactResponse.text();
                   console.error('Error updating contact:', updateErrorText);
@@ -260,9 +256,8 @@ export default async function handler(
       contactId = contactResult.id;
     }
 
-    // 3. Vérifier et associer le contact à l'entreprise si nécessaire
-    // Note: Le companyId est déjà inclus dans le payload du contact, donc l'association
-    // devrait être automatique. On fait une vérification supplémentaire seulement si nécessaire.
+    // 3. Associer le contact à l'entreprise (obligatoire car l'API Brevo ne permet pas
+    // d'associer directement un contact à une entreprise lors de la création)
     if (companyId && contactId) {
       try {
         // Vérifier que l'entreprise existe avant de tenter la liaison
@@ -278,8 +273,7 @@ export default async function handler(
         );
 
         if (verifyCompanyResponse.ok) {
-          // L'entreprise existe, on peut essayer de lier le contact si ce n'est pas déjà fait
-          // (le companyId dans le payload devrait déjà avoir fait la liaison, mais on vérifie)
+          // L'entreprise existe, lier le contact à l'entreprise
           const linkContactResponse = await fetch(
             `https://api.brevo.com/v3/companies/${companyId}/contacts`,
             {
@@ -295,32 +289,33 @@ export default async function handler(
             }
           );
 
-          if (!linkContactResponse.ok) {
+          if (linkContactResponse.ok) {
+            console.log(`✓ Contact ${contactId} successfully linked to company ${companyId}`);
+          } else {
             const errorText = await linkContactResponse.text();
-            // Ne pas échouer si le contact est déjà associé ou si l'association a déjà été faite
             try {
               const errorData = JSON.parse(errorText);
-              if (errorData.code === 'duplicate_parameter' || errorData.code === 'invalid_parameter') {
-                console.log('Contact already linked to company or association handled automatically');
+              if (errorData.code === 'duplicate_parameter') {
+                console.log(`✓ Contact ${contactId} already linked to company ${companyId}`);
               } else {
-                console.error('Error linking contact to company:', errorText);
+                console.error(`✗ Error linking contact to company: ${errorText}`);
+                console.error(`  Error code: ${errorData.code}, Message: ${errorData.message}`);
               }
-            } catch {
-              // Si l'erreur n'est pas un JSON valide, c'est peut-être juste que l'association existe déjà
-              console.log('Note: Company association may already exist (companyId was included in contact payload)');
+            } catch (parseError) {
+              console.error(`✗ Error linking contact to company (non-JSON response): ${errorText}`);
             }
-          } else {
-            console.log(`Contact ${contactId} linked to company ${companyId}`);
           }
         } else {
-          console.warn(`Company ${companyId} not found, skipping explicit link (may have been created automatically)`);
+          const errorText = await verifyCompanyResponse.text();
+          console.warn(`✗ Company ${companyId} not found: ${errorText}`);
         }
       } catch (linkError) {
-        console.error('Error linking contact to company:', linkError);
-        // On continue même si l'association échoue car le companyId dans le payload devrait suffire
+        console.error('✗ Error linking contact to company:', linkError);
       }
     } else if (companyId && !contactId) {
-      console.log('Company ID available but contact ID not retrieved, association handled via contact payload');
+      console.warn(`✗ Cannot link contact to company: companyId=${companyId} but contactId is null`);
+    } else if (!companyId && contactId) {
+      console.log(`ℹ No company to link: contactId=${contactId} but no companyId available`);
     }
 
     // 2. Envoyer un email de remerciement au contact
