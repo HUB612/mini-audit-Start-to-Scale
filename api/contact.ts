@@ -73,33 +73,64 @@ export default async function handler(
       if (createCompanyResponse.ok) {
         const newCompany = await createCompanyResponse.json();
         companyId = newCompany.id;
-        console.log(`Company created/found: ${formData.startup_name} (ID: ${companyId})`);
+        console.log(`Company created: ${formData.startup_name} (ID: ${companyId})`);
       } else {
         // Si l'entreprise existe déjà, essayer de la récupérer par recherche
         const errorText = await createCompanyResponse.text();
-        console.log('Company may already exist, attempting search...');
+        let errorData: any = null;
+        try {
+          errorData = JSON.parse(errorText);
+        } catch (e) {
+          // Ignorer l'erreur de parsing
+        }
         
-        // Recherche simplifiée par nom
-        const searchResponse = await fetch(
-          `https://api.brevo.com/v3/companies?limit=50`,
-          {
-            method: 'GET',
-            headers: {
-              'accept': 'application/json',
-              'api-key': brevoApiKey,
-            },
-          }
-        );
-
-        if (searchResponse.ok) {
-          const searchData = await searchResponse.json();
-          const foundCompany = searchData.companies?.find(
-            (c: any) => c.name?.toLowerCase() === formData.startup_name.toLowerCase()
+        console.log('Company creation failed, attempting search...', errorText);
+        
+        // Recherche par nom avec pagination (API Brevo v3)
+        // On cherche dans les premières pages pour trouver l'entreprise
+        let found = false;
+        let offset = 0;
+        const limit = 50;
+        
+        while (!found && offset < 200) { // Limiter à 4 pages max pour éviter les boucles infinies
+          const searchResponse = await fetch(
+            `https://api.brevo.com/v3/companies?limit=${limit}&offset=${offset}`,
+            {
+              method: 'GET',
+              headers: {
+                'accept': 'application/json',
+                'api-key': brevoApiKey,
+              },
+            }
           );
-          if (foundCompany) {
-            companyId = foundCompany.id;
-            console.log(`Company found: ${formData.startup_name} (ID: ${companyId})`);
+
+          if (searchResponse.ok) {
+            const searchData = await searchResponse.json();
+            const foundCompany = searchData.companies?.find(
+              (c: any) => c.name?.toLowerCase() === formData.startup_name.toLowerCase()
+            );
+            if (foundCompany) {
+              companyId = foundCompany.id;
+              console.log(`Company found: ${formData.startup_name} (ID: ${companyId})`);
+              found = true;
+              break;
+            }
+            
+            // Si on a moins de résultats que la limite, on a atteint la fin
+            if (!searchData.companies || searchData.companies.length < limit) {
+              break;
+            }
+            
+            offset += limit;
+          } else {
+            const searchErrorText = await searchResponse.text();
+            console.error('Error searching for company:', searchErrorText);
+            break;
           }
+        }
+        
+        if (!found) {
+          console.log(`Company not found: ${formData.startup_name} - will continue without company association`);
         }
       }
     } catch (companyError) {
@@ -197,34 +228,26 @@ export default async function handler(
       contactId = contactResult.id;
     }
 
-    // 3. Associer le contact à l'entreprise si nécessaire
-    if (companyId) {
+    // 3. Vérifier et associer le contact à l'entreprise si nécessaire
+    // Note: Le companyId est déjà inclus dans le payload du contact, donc l'association
+    // devrait être automatique. On fait une vérification supplémentaire seulement si nécessaire.
+    if (companyId && contactId) {
       try {
-        // Si on n'a pas encore l'ID du contact, le récupérer
-        if (!contactId) {
-          try {
-            const getContactResponse = await fetch(
-              `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
-              {
-                method: 'GET',
-                headers: {
-                  'accept': 'application/json',
-                  'api-key': brevoApiKey,
-                },
-              }
-            );
-            
-            if (getContactResponse.ok) {
-              const contactData = await getContactResponse.json();
-              contactId = contactData.id;
-            }
-          } catch (getError) {
-            console.error('Error getting contact ID for company link:', getError);
+        // Vérifier que l'entreprise existe avant de tenter la liaison
+        const verifyCompanyResponse = await fetch(
+          `https://api.brevo.com/v3/companies/${companyId}`,
+          {
+            method: 'GET',
+            headers: {
+              'accept': 'application/json',
+              'api-key': brevoApiKey,
+            },
           }
-        }
+        );
 
-        // Associer le contact à l'entreprise si on a l'ID
-        if (contactId) {
+        if (verifyCompanyResponse.ok) {
+          // L'entreprise existe, on peut essayer de lier le contact si ce n'est pas déjà fait
+          // (le companyId dans le payload devrait déjà avoir fait la liaison, mais on vérifie)
           const linkContactResponse = await fetch(
             `https://api.brevo.com/v3/companies/${companyId}/contacts`,
             {
@@ -242,25 +265,30 @@ export default async function handler(
 
           if (!linkContactResponse.ok) {
             const errorText = await linkContactResponse.text();
-            // Ne pas échouer si le contact est déjà associé
+            // Ne pas échouer si le contact est déjà associé ou si l'association a déjà été faite
             try {
               const errorData = JSON.parse(errorText);
-              if (errorData.code !== 'duplicate_parameter') {
-                console.error('Error linking contact to company:', errorText);
+              if (errorData.code === 'duplicate_parameter' || errorData.code === 'invalid_parameter') {
+                console.log('Contact already linked to company or association handled automatically');
               } else {
-                console.log('Contact already linked to company');
+                console.error('Error linking contact to company:', errorText);
               }
             } catch {
-              console.error('Error linking contact to company:', errorText);
+              // Si l'erreur n'est pas un JSON valide, c'est peut-être juste que l'association existe déjà
+              console.log('Note: Company association may already exist (companyId was included in contact payload)');
             }
           } else {
             console.log(`Contact ${contactId} linked to company ${companyId}`);
           }
+        } else {
+          console.warn(`Company ${companyId} not found, skipping explicit link (may have been created automatically)`);
         }
       } catch (linkError) {
         console.error('Error linking contact to company:', linkError);
-        // On continue même si l'association échoue
+        // On continue même si l'association échoue car le companyId dans le payload devrait suffire
       }
+    } else if (companyId && !contactId) {
+      console.log('Company ID available but contact ID not retrieved, association handled via contact payload');
     }
 
     // 2. Envoyer un email de remerciement au contact
