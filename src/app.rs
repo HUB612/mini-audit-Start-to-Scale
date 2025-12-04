@@ -27,7 +27,8 @@ pub struct App {
 #[derive(Clone, Default, PartialEq)]
 pub struct FormData {
     pub startup_name: String,
-    pub contact_name: String,
+    pub contact_firstname: String,
+    pub contact_lastname: String,
     pub contact_email: String,
     pub contact_phone: String,
     pub message: String,
@@ -94,7 +95,8 @@ impl Component for App {
             Msg::UpdateFormField(field, value) => {
                 match field.as_str() {
                     "startup_name" => self.form_data.startup_name = value,
-                    "contact_name" => self.form_data.contact_name = value,
+                    "contact_firstname" => self.form_data.contact_firstname = value,
+                    "contact_lastname" => self.form_data.contact_lastname = value,
                     "contact_email" => self.form_data.contact_email = value,
                     "contact_phone" => self.form_data.contact_phone = value,
                     "message" => self.form_data.message = value,
@@ -122,7 +124,8 @@ impl Component for App {
                 spawn_local(async move {
                     let json_data = serde_json::json!({
                         "startup_name": form_data.startup_name,
-                        "contact_name": form_data.contact_name,
+                        "contact_firstname": form_data.contact_firstname,
+                        "contact_lastname": form_data.contact_lastname,
                         "contact_email": form_data.contact_email,
                         "contact_phone": form_data.contact_phone,
                         "message": form_data.message,
@@ -299,8 +302,13 @@ impl App {
             return Some("Le nom de la startup est requis".to_string());
         }
 
+        // Valider le prénom du contact
+        if self.form_data.contact_firstname.trim().is_empty() {
+            return Some("Votre prénom est requis".to_string());
+        }
+
         // Valider le nom du contact
-        if self.form_data.contact_name.trim().is_empty() {
+        if self.form_data.contact_lastname.trim().is_empty() {
             return Some("Votre nom est requis".to_string());
         }
 

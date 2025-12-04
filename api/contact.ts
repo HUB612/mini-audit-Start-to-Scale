@@ -2,7 +2,8 @@ import type { VercelRequest, VercelResponse } from '@vercel/node';
 
 interface ContactFormData {
   startup_name: string;
-  contact_name: string;
+  contact_firstname: string;
+  contact_lastname: string;
   contact_email: string;
   contact_phone?: string;
   message?: string;
@@ -39,16 +40,17 @@ export default async function handler(
     const formData: ContactFormData = request.body;
 
     // Valider les champs requis
-    if (!formData.startup_name || !formData.contact_name || !formData.contact_email) {
+    if (!formData.startup_name || !formData.contact_firstname || !formData.contact_lastname || !formData.contact_email) {
       return response.status(400).json({ 
-        error: 'Missing required fields: startup_name, contact_name, contact_email' 
+        error: 'Missing required fields: startup_name, contact_firstname, contact_lastname, contact_email' 
       });
     }
 
-    // Extraire prénom et nom de manière plus intelligente
-    const nameParts = formData.contact_name.trim().split(/\s+/);
-    const firstName = nameParts[0] || formData.contact_name;
-    const lastName = nameParts.length > 1 ? nameParts.slice(1).join(' ') : '';
+    // Utiliser directement les champs séparés
+    const firstName = formData.contact_firstname.trim();
+    const lastName = formData.contact_lastname.trim();
+
+    console.log(`Contact: FirstName: "${firstName}", LastName: "${lastName}"`);
 
     // 1. Créer ou récupérer l'entreprise dans Brevo
     let companyId: number | null = null;
@@ -142,15 +144,16 @@ export default async function handler(
     const cleanedPhone = cleanPhoneNumber(formData.contact_phone);
 
     // 2. Ajouter le contact à la liste Brevo avec toutes les informations
+    // Note: Brevo utilise FIRSTNAME et LASTNAME comme attributs standards
     const contactAttributes: any = {
       FIRSTNAME: firstName,
       LASTNAME: lastName,
-      PRENOM: firstName, // Attribut personnalisé si utilisé
-      NOM: lastName, // Attribut personnalisé si utilisé
       STARTUP: formData.startup_name,
       COMPANY: formData.startup_name, // Attribut company standard
       MESSAGE: formData.message || '',
     };
+    
+    console.log(`Contact attributes:`, JSON.stringify(contactAttributes, null, 2));
 
     // Ajouter le téléphone uniquement s'il est valide
     if (cleanedPhone) {
@@ -254,10 +257,36 @@ export default async function handler(
       const contactResult = await addContactResponse.json();
       contactAdded = true;
       contactId = contactResult.id;
+      console.log(`✓ New contact created: ${formData.contact_email} (ID: ${contactId})`);
+    }
+
+    // S'assurer qu'on a toujours le contactId (récupérer via GET si nécessaire)
+    if (!contactId && contactAdded) {
+      try {
+        const getContactResponse = await fetch(
+          `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+          {
+            method: 'GET',
+            headers: {
+              'accept': 'application/json',
+              'api-key': brevoApiKey,
+            },
+          }
+        );
+        
+        if (getContactResponse.ok) {
+          const contactData = await getContactResponse.json();
+          contactId = contactData.id;
+          console.log(`✓ Contact ID retrieved: ${contactId}`);
+        }
+      } catch (getError) {
+        console.error('Error retrieving contact ID:', getError);
+      }
     }
 
     // 3. Associer le contact à l'entreprise (obligatoire car l'API Brevo ne permet pas
     // d'associer directement un contact à une entreprise lors de la création)
+    console.log(`Attempting to link contact ${contactId} to company ${companyId}`);
     if (companyId && contactId) {
       try {
         // Vérifier que l'entreprise existe avant de tenter la liaison
@@ -273,36 +302,87 @@ export default async function handler(
         );
 
         if (verifyCompanyResponse.ok) {
-          // L'entreprise existe, lier le contact à l'entreprise
-          const linkContactResponse = await fetch(
-            `https://api.brevo.com/v3/companies/${companyId}/contacts`,
-            {
-              method: 'POST',
-              headers: {
-                'accept': 'application/json',
-                'api-key': brevoApiKey,
-                'content-type': 'application/json',
-              },
-              body: JSON.stringify({
-                linkContactIds: [contactId],
-              }),
-            }
-          );
-
-          if (linkContactResponse.ok) {
-            console.log(`✓ Contact ${contactId} successfully linked to company ${companyId}`);
+          // S'assurer que contactId est un nombre
+          const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
+          
+          if (isNaN(contactIdNum)) {
+            console.error(`✗ Invalid contactId: ${contactId} (not a number)`);
           } else {
-            const errorText = await linkContactResponse.text();
-            try {
-              const errorData = JSON.parse(errorText);
-              if (errorData.code === 'duplicate_parameter') {
-                console.log(`✓ Contact ${contactId} already linked to company ${companyId}`);
-              } else {
-                console.error(`✗ Error linking contact to company: ${errorText}`);
-                console.error(`  Error code: ${errorData.code}, Message: ${errorData.message}`);
+            console.log(`Linking contact ${contactIdNum} (type: ${typeof contactIdNum}) to company ${companyId}`);
+            
+            // L'entreprise existe, lier le contact à l'entreprise
+            const linkPayload = {
+              linkContactIds: [contactIdNum],
+            };
+            
+            console.log(`Link payload:`, JSON.stringify(linkPayload));
+            
+            const linkContactResponse = await fetch(
+              `https://api.brevo.com/v3/companies/${companyId}/contacts`,
+              {
+                method: 'POST',
+                headers: {
+                  'accept': 'application/json',
+                  'api-key': brevoApiKey,
+                  'content-type': 'application/json',
+                },
+                body: JSON.stringify(linkPayload),
               }
-            } catch (parseError) {
-              console.error(`✗ Error linking contact to company (non-JSON response): ${errorText}`);
+            );
+
+            const responseStatus = linkContactResponse.status;
+            const responseText = await linkContactResponse.text();
+            
+            console.log(`Link response status: ${responseStatus}`);
+            console.log(`Link response body: ${responseText}`);
+
+            if (linkContactResponse.ok) {
+              console.log(`✓✓✓ SUCCESS: Contact ${contactIdNum} successfully linked to company ${companyId}`);
+            } else {
+              try {
+                const errorData = JSON.parse(responseText);
+                if (errorData.code === 'duplicate_parameter') {
+                  console.log(`✓ Contact ${contactIdNum} already linked to company ${companyId}`);
+                } else {
+                  console.error(`✗✗✗ FAILED to link contact to company:`);
+                  console.error(`  Status: ${responseStatus}`);
+                  console.error(`  Error code: ${errorData.code}`);
+                  console.error(`  Error message: ${errorData.message}`);
+                  console.error(`  Full error: ${responseText}`);
+                  
+                  // Tentative alternative : mettre à jour le contact avec companyId via PUT
+                  console.log(`Attempting alternative: PUT contact with companyId...`);
+                  try {
+                    const updateContactWithCompanyResponse = await fetch(
+                      `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+                      {
+                        method: 'PUT',
+                        headers: {
+                          'accept': 'application/json',
+                          'api-key': brevoApiKey,
+                          'content-type': 'application/json',
+                        },
+                        body: JSON.stringify({
+                          companyId: companyId,
+                        }),
+                      }
+                    );
+                    
+                    if (updateContactWithCompanyResponse.ok) {
+                      console.log(`✓✓✓ Alternative method SUCCESS: Contact updated with companyId via PUT`);
+                    } else {
+                      const altErrorText = await updateContactWithCompanyResponse.text();
+                      console.error(`✗ Alternative method also failed: ${altErrorText}`);
+                    }
+                  } catch (altError) {
+                    console.error(`✗ Alternative method error:`, altError);
+                  }
+                }
+              } catch (parseError) {
+                console.error(`✗✗✗ FAILED to link contact to company (non-JSON response):`);
+                console.error(`  Status: ${responseStatus}`);
+                console.error(`  Response: ${responseText}`);
+              }
             }
           }
         } else {
@@ -319,10 +399,11 @@ export default async function handler(
     }
 
     // 2. Envoyer un email de remerciement au contact
+    const contactFullName = `${firstName} ${lastName}`.trim();
     const thankYouEmailContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
         <h2 style="color: #333;">Merci pour votre intérêt !</h2>
-        <p>Bonjour ${escapeHtml(formData.contact_name)},</p>
+        <p>Bonjour ${escapeHtml(contactFullName)},</p>
         <p>Nous avons bien reçu votre demande de contact concernant <strong>${escapeHtml(formData.startup_name)}</strong>.</p>
         <p>Nous vous remercions de votre intérêt pour notre programme <strong>Start to Scale</strong>.</p>
         <p>Notre équipe va examiner votre demande et reviendra vers vous rapidement pour un premier échange.</p>
@@ -339,7 +420,7 @@ export default async function handler(
       to: [
         {
           email: formData.contact_email,
-          name: formData.contact_name,
+          name: contactFullName,
         },
       ],
       subject: 'Merci pour votre demande - Hub612 Start to Scale',

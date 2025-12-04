@@ -100,12 +100,23 @@ pub fn ContactScreen(props: &Props) -> Html {
         })
     };
 
-    let on_contact_name = {
+    let on_contact_firstname = {
         let callback = props.on_update.clone();
         Callback::from(move |e: web_sys::InputEvent| {
             if let Some(target) = e.target() {
                 if let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() {
-                    callback.emit(("contact_name".to_string(), input.value()));
+                    callback.emit(("contact_firstname".to_string(), input.value()));
+                }
+            }
+        })
+    };
+
+    let on_contact_lastname = {
+        let callback = props.on_update.clone();
+        Callback::from(move |e: web_sys::InputEvent| {
+            if let Some(target) = e.target() {
+                if let Ok(input) = target.dyn_into::<web_sys::HtmlInputElement>() {
+                    callback.emit(("contact_lastname".to_string(), input.value()));
                 }
             }
         })
@@ -215,12 +226,23 @@ pub fn ContactScreen(props: &Props) -> Html {
                         </div>
 
                         <div class="form-group">
-                            <label for="contact-name">{"Votre nom *"}</label>
+                            <label for="contact-firstname">{"Votre prénom *"}</label>
                             <input
                                 type="text"
-                                id="contact-name"
-                                value={props.form_data.contact_name.clone()}
-                                oninput={on_contact_name}
+                                id="contact-firstname"
+                                value={props.form_data.contact_firstname.clone()}
+                                oninput={on_contact_firstname}
+                                required={true}
+                            />
+                        </div>
+
+                        <div class="form-group">
+                            <label for="contact-lastname">{"Votre nom *"}</label>
+                            <input
+                                type="text"
+                                id="contact-lastname"
+                                value={props.form_data.contact_lastname.clone()}
+                                oninput={on_contact_lastname}
                                 required={true}
                             />
                         </div>
