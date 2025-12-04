@@ -75,7 +75,8 @@ export default async function handler(
       if (createCompanyResponse.ok) {
         const newCompany = await createCompanyResponse.json();
         companyId = newCompany.id;
-        console.log(`Company created: ${formData.startup_name} (ID: ${companyId})`);
+        console.log(`Company created: ${formData.startup_name} (ID: ${companyId}, type: ${typeof companyId})`);
+        console.log(`Company full data:`, JSON.stringify(newCompany, null, 2));
       } else {
         // Si l'entreprise existe déjà, essayer de la récupérer par recherche
         const errorText = await createCompanyResponse.text();
@@ -308,13 +309,14 @@ export default async function handler(
           console.log(`  Contact email: ${formData.contact_email}`);
           console.log(`  Company ID: ${companyId}`);
           
+          // Essayer avec companyId à la racine
           const updatePayload = {
             companyId: companyId,
           };
           
-          console.log(`Update payload:`, JSON.stringify(updatePayload));
+          console.log(`Update payload (method 1):`, JSON.stringify(updatePayload));
           
-          const updateContactResponse = await fetch(
+          let updateContactResponse = await fetch(
             `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
             {
               method: 'PUT',
@@ -327,14 +329,70 @@ export default async function handler(
             }
           );
 
-          const responseStatus = updateContactResponse.status;
-          const responseText = await updateContactResponse.text();
+          let responseStatus = updateContactResponse.status;
+          let responseText = await updateContactResponse.text();
           
           console.log(`Update response status: ${responseStatus}`);
           console.log(`Update response body: ${responseText}`);
 
+          // Vérifier si le contact a bien été mis à jour en le récupérant
           if (updateContactResponse.ok) {
-            console.log(`✓✓✓ SUCCESS: Contact linked to company ${companyId} via PUT update`);
+            console.log(`✓ PUT request successful (status ${responseStatus}), verifying contact update...`);
+            
+            // Attendre un peu pour que la mise à jour soit propagée
+            await new Promise(resolve => setTimeout(resolve, 500));
+            
+            // Récupérer le contact pour vérifier s'il a le companyId
+            try {
+              const verifyContactResponse = await fetch(
+                `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+                {
+                  method: 'GET',
+                  headers: {
+                    'accept': 'application/json',
+                    'api-key': brevoApiKey,
+                  },
+                }
+              );
+              
+              if (verifyContactResponse.ok) {
+                const contactData = await verifyContactResponse.json();
+                console.log(`Contact data after update:`, JSON.stringify(contactData, null, 2));
+                
+                if (contactData.companyId === companyId || contactData.companyId === String(companyId)) {
+                  console.log(`✓✓✓ VERIFIED: Contact is linked to company ${companyId}`);
+                } else {
+                  console.warn(`⚠ WARNING: Contact companyId is ${contactData.companyId}, expected ${companyId}`);
+                  console.warn(`  Trying alternative method with companyId in attributes...`);
+                  
+                  // Essayer avec companyId dans attributes
+                  const updatePayload2 = {
+                    attributes: {
+                      COMPANY_ID: String(companyId),
+                    },
+                  };
+                  
+                  const updateContactResponse2 = await fetch(
+                    `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+                    {
+                      method: 'PUT',
+                      headers: {
+                        'accept': 'application/json',
+                        'api-key': brevoApiKey,
+                        'content-type': 'application/json',
+                      },
+                      body: JSON.stringify(updatePayload2),
+                    }
+                  );
+                  
+                  if (updateContactResponse2.ok) {
+                    console.log(`✓ Alternative method (attributes) returned ${updateContactResponse2.status}`);
+                  }
+                }
+              }
+            } catch (verifyError) {
+              console.error(`Error verifying contact update:`, verifyError);
+            }
           } else {
             try {
               const errorData = JSON.parse(responseText);
