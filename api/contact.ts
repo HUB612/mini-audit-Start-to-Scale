@@ -191,7 +191,30 @@ export default async function handler(
     // 3. Associer le contact à l'entreprise si nécessaire
     if (companyId) {
       try {
-        // Si on a l'ID du contact, l'associer directement
+        // Si on n'a pas encore l'ID du contact, le récupérer
+        if (!contactId) {
+          try {
+            const getContactResponse = await fetch(
+              `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+              {
+                method: 'GET',
+                headers: {
+                  'accept': 'application/json',
+                  'api-key': brevoApiKey,
+                },
+              }
+            );
+            
+            if (getContactResponse.ok) {
+              const contactData = await getContactResponse.json();
+              contactId = contactData.id;
+            }
+          } catch (getError) {
+            console.error('Error getting contact ID for company link:', getError);
+          }
+        }
+
+        // Associer le contact à l'entreprise si on a l'ID
         if (contactId) {
           const linkContactResponse = await fetch(
             `https://api.brevo.com/v3/companies/${companyId}/contacts`,
@@ -210,36 +233,24 @@ export default async function handler(
 
           if (!linkContactResponse.ok) {
             const errorText = await linkContactResponse.text();
-            console.error('Error linking contact to company:', errorText);
+            // Ne pas échouer si le contact est déjà associé
+            try {
+              const errorData = JSON.parse(errorText);
+              if (errorData.code !== 'duplicate_parameter') {
+                console.error('Error linking contact to company:', errorText);
+              } else {
+                console.log('Contact already linked to company');
+              }
+            } catch {
+              console.error('Error linking contact to company:', errorText);
+            }
           } else {
             console.log(`Contact ${contactId} linked to company ${companyId}`);
-          }
-        } else {
-          // Sinon, utiliser l'email pour associer le contact
-          const linkByEmailResponse = await fetch(
-            `https://api.brevo.com/v3/companies/${companyId}/contacts`,
-            {
-              method: 'POST',
-              headers: {
-                'accept': 'application/json',
-                'api-key': brevoApiKey,
-                'content-type': 'application/json',
-              },
-              body: JSON.stringify({
-                linkContactIds: [formData.contact_email],
-              }),
-            }
-          );
-
-          if (!linkByEmailResponse.ok) {
-            const errorText = await linkByEmailResponse.text();
-            console.error('Error linking contact to company by email:', errorText);
-          } else {
-            console.log(`Contact ${formData.contact_email} linked to company ${companyId}`);
           }
         }
       } catch (linkError) {
         console.error('Error linking contact to company:', linkError);
+        // On continue même si l'association échoue
       }
     }
 
