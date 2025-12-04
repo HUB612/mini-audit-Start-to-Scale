@@ -302,87 +302,84 @@ export default async function handler(
         );
 
         if (verifyCompanyResponse.ok) {
-          // S'assurer que contactId est un nombre
-          const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
+          // Méthode principale : mettre à jour le contact avec companyId via PUT
+          // L'API Brevo permet d'associer un contact à une entreprise en mettant à jour le contact
+          console.log(`Attempting to link contact to company via PUT update...`);
+          console.log(`  Contact email: ${formData.contact_email}`);
+          console.log(`  Company ID: ${companyId}`);
           
-          if (isNaN(contactIdNum)) {
-            console.error(`✗ Invalid contactId: ${contactId} (not a number)`);
+          const updatePayload = {
+            companyId: companyId,
+          };
+          
+          console.log(`Update payload:`, JSON.stringify(updatePayload));
+          
+          const updateContactResponse = await fetch(
+            `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+            {
+              method: 'PUT',
+              headers: {
+                'accept': 'application/json',
+                'api-key': brevoApiKey,
+                'content-type': 'application/json',
+              },
+              body: JSON.stringify(updatePayload),
+            }
+          );
+
+          const responseStatus = updateContactResponse.status;
+          const responseText = await updateContactResponse.text();
+          
+          console.log(`Update response status: ${responseStatus}`);
+          console.log(`Update response body: ${responseText}`);
+
+          if (updateContactResponse.ok) {
+            console.log(`✓✓✓ SUCCESS: Contact linked to company ${companyId} via PUT update`);
           } else {
-            console.log(`Linking contact ${contactIdNum} (type: ${typeof contactIdNum}) to company ${companyId}`);
-            
-            // L'entreprise existe, lier le contact à l'entreprise
-            const linkPayload = {
-              linkContactIds: [contactIdNum],
-            };
-            
-            console.log(`Link payload:`, JSON.stringify(linkPayload));
-            
-            const linkContactResponse = await fetch(
-              `https://api.brevo.com/v3/companies/${companyId}/contacts`,
-              {
-                method: 'POST',
-                headers: {
-                  'accept': 'application/json',
-                  'api-key': brevoApiKey,
-                  'content-type': 'application/json',
-                },
-                body: JSON.stringify(linkPayload),
-              }
-            );
-
-            const responseStatus = linkContactResponse.status;
-            const responseText = await linkContactResponse.text();
-            
-            console.log(`Link response status: ${responseStatus}`);
-            console.log(`Link response body: ${responseText}`);
-
-            if (linkContactResponse.ok) {
-              console.log(`✓✓✓ SUCCESS: Contact ${contactIdNum} successfully linked to company ${companyId}`);
-            } else {
-              try {
-                const errorData = JSON.parse(responseText);
-                if (errorData.code === 'duplicate_parameter') {
-                  console.log(`✓ Contact ${contactIdNum} already linked to company ${companyId}`);
-                } else {
-                  console.error(`✗✗✗ FAILED to link contact to company:`);
-                  console.error(`  Status: ${responseStatus}`);
-                  console.error(`  Error code: ${errorData.code}`);
-                  console.error(`  Error message: ${errorData.message}`);
-                  console.error(`  Full error: ${responseText}`);
-                  
-                  // Tentative alternative : mettre à jour le contact avec companyId via PUT
-                  console.log(`Attempting alternative: PUT contact with companyId...`);
-                  try {
-                    const updateContactWithCompanyResponse = await fetch(
-                      `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+            try {
+              const errorData = JSON.parse(responseText);
+              console.error(`✗✗✗ FAILED to link contact to company:`);
+              console.error(`  Status: ${responseStatus}`);
+              console.error(`  Error code: ${errorData.code}`);
+              console.error(`  Error message: ${errorData.message}`);
+              console.error(`  Full error: ${responseText}`);
+              
+              // Tentative alternative : utiliser l'endpoint /companies/{id}/contacts (si disponible)
+              if (responseStatus === 400 || responseStatus === 422) {
+                console.log(`Attempting alternative: POST to /companies/{id}/contacts...`);
+                try {
+                  const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
+                  if (!isNaN(contactIdNum)) {
+                    const linkContactResponse = await fetch(
+                      `https://api.brevo.com/v3/companies/${companyId}/contacts`,
                       {
-                        method: 'PUT',
+                        method: 'POST',
                         headers: {
                           'accept': 'application/json',
                           'api-key': brevoApiKey,
                           'content-type': 'application/json',
                         },
                         body: JSON.stringify({
-                          companyId: companyId,
+                          linkContactIds: [contactIdNum],
                         }),
                       }
                     );
                     
-                    if (updateContactWithCompanyResponse.ok) {
-                      console.log(`✓✓✓ Alternative method SUCCESS: Contact updated with companyId via PUT`);
+                    if (linkContactResponse.ok) {
+                      console.log(`✓✓✓ Alternative method SUCCESS: Contact linked via /companies/{id}/contacts`);
                     } else {
-                      const altErrorText = await updateContactWithCompanyResponse.text();
+                      const altErrorText = await linkContactResponse.text();
                       console.error(`✗ Alternative method also failed: ${altErrorText}`);
                     }
-                  } catch (altError) {
-                    console.error(`✗ Alternative method error:`, altError);
                   }
+                } catch (altError) {
+                  console.error(`✗ Alternative method error:`, altError);
                 }
-              } catch (parseError) {
-                console.error(`✗✗✗ FAILED to link contact to company (non-JSON response):`);
-                console.error(`  Status: ${responseStatus}`);
-                console.error(`  Response: ${responseText}`);
               }
+            } catch (parseError) {
+              console.error(`✗✗✗ FAILED to link contact to company (non-JSON response):`);
+              console.error(`  Status: ${responseStatus}`);
+              console.error(`  Response: ${responseText}`);
             }
           }
         } else {
