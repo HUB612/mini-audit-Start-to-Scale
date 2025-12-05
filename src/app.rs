@@ -183,9 +183,25 @@ impl Component for App {
                                         match wasm_bindgen_futures::JsFuture::from(text_future)
                                             .await
                                         {
-                                            Ok(text) => text
-                                                .as_string()
-                                                .unwrap_or_else(|| "Erreur inconnue".to_string()),
+                                            Ok(text) => {
+                                                let text_str = text.as_string().unwrap_or_else(|| "Erreur inconnue".to_string());
+                                                
+                                                // Essayer de parser le JSON pour extraire le message d'erreur
+                                                if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&text_str) {
+                                                    if let Some(error_msg) = json_value.get("error").and_then(|v| v.as_str()) {
+                                                        // Si un message de détail est disponible, l'ajouter
+                                                        if let Some(details) = json_value.get("details").and_then(|v| v.as_str()) {
+                                                            format!("{} ({})", error_msg, details)
+                                                        } else {
+                                                            error_msg.to_string()
+                                                        }
+                                                    } else {
+                                                        text_str
+                                                    }
+                                                } else {
+                                                    text_str
+                                                }
+                                            },
                                             Err(_) => "Erreur lors de la lecture de la réponse"
                                                 .to_string(),
                                         }
@@ -419,7 +435,25 @@ impl App {
             })
             .collect();
 
-        valid_chars.len() == phone.chars().count()
+        if valid_chars.len() != phone.chars().count() {
+            return false;
+        }
+
+        // Validation supplémentaire : si le numéro commence par 0, il doit avoir 10 chiffres (format français)
+        // Si le numéro commence par +, il doit avoir au moins 4 caractères après le +
+        if phone.starts_with('+') {
+            let after_plus: String = phone.chars().skip(1).filter(|c| c.is_ascii_digit()).collect();
+            if after_plus.len() < 4 {
+                return false;
+            }
+        } else if phone.starts_with('0') {
+            // Format français : doit avoir exactement 10 chiffres
+            if digits.len() != 10 {
+                return false;
+            }
+        }
+
+        true
     }
 }
 

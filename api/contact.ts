@@ -20,9 +20,6 @@ export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
 ) {
-  console.log('=== CONTACT FORM HANDLER START ===');
-  console.log(`Method: ${request.method}`);
-  
   if (request.method !== 'POST') {
     return response.status(405).json({ error: 'Method not allowed' });
   }
@@ -33,30 +30,17 @@ export default async function handler(
   const brevoSenderName = process.env.BREVO_SENDER_NAME || 'Hub612';
   const brevoListId = process.env.BREVO_LIST_ID;
 
-  console.log('Environment variables check:');
-  console.log(`  BREVO_API_KEY: ${brevoApiKey ? 'SET' : 'MISSING'}`);
-  console.log(`  BREVO_SENDER_EMAIL: ${brevoSenderEmail}`);
-  console.log(`  BREVO_SENDER_NAME: ${brevoSenderName}`);
-  console.log(`  BREVO_LIST_ID: ${brevoListId || 'MISSING'}`);
-
-  if (!brevoApiKey) {
-    console.error('✗ BREVO_API_KEY is not set');
-    return response.status(500).json({ error: 'Server configuration error' });
-  }
-
-  if (!brevoListId) {
-    console.error('✗ BREVO_LIST_ID is not set');
+  if (!brevoApiKey || !brevoListId) {
+    console.error('✗ Missing required environment variables');
     return response.status(500).json({ error: 'Server configuration error' });
   }
 
   try {
     // Récupérer les données du formulaire
     const formData: ContactFormData = request.body;
-    console.log('Form data received:', JSON.stringify(formData, null, 2));
 
     // Valider les champs requis
     if (!formData.startup_name || !formData.contact_firstname || !formData.contact_lastname || !formData.contact_email) {
-      console.error('✗ Missing required fields');
       return response.status(400).json({ 
         error: 'Missing required fields: startup_name, contact_firstname, contact_lastname, contact_email' 
       });
@@ -66,14 +50,8 @@ export default async function handler(
     const lastName = formData.contact_lastname.trim();
     const startupName = formData.startup_name.trim();
 
-    console.log(`\n=== STEP 1: CREATE CONTACT ===`);
-    console.log(`Contact: FirstName: "${firstName}", LastName: "${lastName}", Email: "${formData.contact_email}"`);
-
     // Nettoyer le numéro de téléphone
     const cleanedPhone = cleanPhoneNumber(formData.contact_phone);
-    if (cleanedPhone) {
-      console.log(`Phone cleaned: ${cleanedPhone}`);
-    }
 
     // Préparer les attributs du contact
     const contactAttributes: any = {
@@ -88,16 +66,12 @@ export default async function handler(
       contactAttributes.TELEPHONE = cleanedPhone;
     }
 
-    console.log(`Contact attributes:`, JSON.stringify(contactAttributes, null, 2));
-
     const contactPayload: any = {
       email: formData.contact_email,
       attributes: contactAttributes,
       listIds: [parseInt(brevoListId, 10)],
       updateEnabled: true,
     };
-
-    console.log(`Creating contact with payload:`, JSON.stringify(contactPayload, null, 2));
 
     let contactId: number | null = null;
     let contactAdded = false;
@@ -114,23 +88,34 @@ export default async function handler(
 
     const contactResponseStatus = addContactResponse.status;
     const contactResponseText = await addContactResponse.text();
-    
-    console.log(`Contact creation response status: ${contactResponseStatus}`);
-    console.log(`Contact creation response body: ${contactResponseText}`);
 
     if (!addContactResponse.ok) {
       try {
         const errorData = JSON.parse(contactResponseText);
         
+        // Détecter les erreurs critiques qui empêchent la création du contact
+        if (errorData.code === 'invalid_parameter') {
+          let errorMessage = 'Erreur de validation des données';
+          
+          // Personnaliser le message selon le type d'erreur
+          if (errorData.message?.toLowerCase().includes('phone')) {
+            errorMessage = 'Le numéro de téléphone est invalide. Veuillez utiliser un format valide (ex: +33 6 12 34 56 78 ou 06 12 34 56 78)';
+          } else if (errorData.message?.toLowerCase().includes('email')) {
+            errorMessage = 'L\'adresse email est invalide. Veuillez vérifier le format de votre email';
+          }
+          
+          return response.status(400).json({ 
+            error: errorMessage,
+            details: errorData.message || 'Paramètre invalide'
+          });
+        }
+        
         if (errorData.code === 'duplicate_parameter') {
-          console.log('⚠ Contact already exists, retrieving ID...');
           contactAdded = true;
           
           // Vérifier si c'est le SMS qui cause le conflit
           const isSmsConflict = errorData.metadata?.duplicate_identifiers?.includes('SMS');
           const isEmailConflict = errorData.metadata?.duplicate_identifiers?.includes('email');
-          
-          console.log(`Conflict detected - SMS: ${isSmsConflict}, Email: ${isEmailConflict}`);
           
           // Essayer d'abord de récupérer par email
           let getContactResponse = await fetch(
@@ -147,20 +132,18 @@ export default async function handler(
           if (getContactResponse.ok) {
             const contactData: any = await getContactResponse.json();
             contactId = contactData.id;
-            console.log(`✓ Contact ID retrieved by email: ${contactId}`);
             
             // Préparer les attributs à mettre à jour
             // Si le SMS cause un conflit, ne pas l'inclure dans la mise à jour
             const updateAttributes = { ...contactAttributes };
             if (isSmsConflict && !isEmailConflict) {
-              console.log(`⚠ SMS conflict detected, updating without SMS attribute`);
               delete updateAttributes.SMS;
               delete updateAttributes.TELEPHONE;
             }
             
             // Mettre à jour les attributs
             const updatePayload = { attributes: updateAttributes };
-            const updateResponse = await fetch(
+            await fetch(
               `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
               {
                 method: 'PUT',
@@ -172,21 +155,10 @@ export default async function handler(
                 body: JSON.stringify(updatePayload),
               }
             );
-            
-            if (updateResponse.ok) {
-              console.log(`✓ Contact attributes updated`);
-            } else {
-              const updateError = await updateResponse.text();
-              console.error(`✗ Error updating contact: ${updateError}`);
-            }
           } else {
             // Si la récupération par email a échoué
             if (isSmsConflict && !isEmailConflict) {
               // Le SMS est déjà associé à un autre contact, créer sans SMS
-              console.log(`⚠ SMS conflict: phone number already associated with another contact`);
-              console.log(`Creating contact without SMS attribute...`);
-              
-              // Créer le contact sans le SMS
               const contactPayloadWithoutSms: any = {
                 email: formData.contact_email,
                 attributes: {
@@ -209,16 +181,11 @@ export default async function handler(
                 body: JSON.stringify(contactPayloadWithoutSms),
               });
               
-              const retryStatus = retryResponse.status;
               const retryText = await retryResponse.text();
-              
-              console.log(`Retry (without SMS) response status: ${retryStatus}`);
-              console.log(`Retry (without SMS) response body: ${retryText}`);
               
               if (retryResponse.ok) {
                 const retryResult: any = JSON.parse(retryText);
                 contactId = retryResult.id;
-                console.log(`✓ Contact created without SMS: ID ${contactId}`);
               } else {
                 // Si ça échoue encore, analyser l'erreur
                 try {
@@ -227,8 +194,6 @@ export default async function handler(
                   // Si c'est encore un duplicate_parameter pour l'email, le contact existe déjà
                   if (retryErrorData.code === 'duplicate_parameter' && 
                       retryErrorData.metadata?.duplicate_identifiers?.includes('email')) {
-                    console.log(`⚠ Email also exists, retrieving contact by email...`);
-                    
                     const finalGetResponse = await fetch(
                       `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
                       {
@@ -243,7 +208,6 @@ export default async function handler(
                     if (finalGetResponse.ok) {
                       const finalContactData: any = await finalGetResponse.json();
                       contactId = finalContactData.id;
-                      console.log(`✓ Contact ID retrieved on final attempt: ${contactId}`);
                       
                       // Mettre à jour les attributs sans SMS
                       const updateAttributes = {
@@ -254,7 +218,7 @@ export default async function handler(
                       };
                       
                       const updatePayload = { attributes: updateAttributes };
-                      const updateResponse = await fetch(
+                      await fetch(
                         `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
                         {
                           method: 'PUT',
@@ -266,41 +230,47 @@ export default async function handler(
                           body: JSON.stringify(updatePayload),
                         }
                       );
-                      
-                      if (updateResponse.ok) {
-                        console.log(`✓ Contact attributes updated (without SMS)`);
-                      } else {
-                        const updateError = await updateResponse.text();
-                        console.error(`✗ Error updating contact: ${updateError}`);
-                      }
-                    } else {
-                      console.error(`✗ Failed to retrieve existing contact after retry`);
                     }
-                  } else {
-                    console.error(`✗ Retry failed with unexpected error: ${retryText}`);
                   }
                 } catch (parseRetryError) {
-                  console.error(`✗ Error parsing retry response: ${retryText}`);
+                  // Ignorer les erreurs de parsing
                 }
               }
-            } else {
-              console.error(`✗ Failed to retrieve existing contact`);
             }
           }
         } else {
-          console.error(`✗ Failed to create contact: ${contactResponseText}`);
+          // Autre erreur non gérée
+          // Si c'est une erreur critique (400, 422, etc.), renvoyer une erreur
+          if (contactResponseStatus >= 400 && contactResponseStatus < 500) {
+            let errorDetails = contactResponseText;
+            try {
+              const parsedError = JSON.parse(contactResponseText);
+              errorDetails = parsedError.message || contactResponseText;
+            } catch (_) {
+              // Garder le texte brut si on ne peut pas le parser
+            }
+            return response.status(400).json({ 
+              error: 'Erreur lors de l\'enregistrement du contact',
+              details: errorDetails
+            });
+          }
         }
       } catch (parseError) {
-        console.error(`✗ Error parsing contact creation response:`, parseError);
+        // Si on ne peut pas parser l'erreur mais que le statut est une erreur client, renvoyer quand même une erreur
+        if (contactResponseStatus >= 400 && contactResponseStatus < 500) {
+          return response.status(400).json({ 
+            error: 'Erreur lors de l\'enregistrement du contact',
+            details: 'Impossible de traiter votre demande. Veuillez vérifier vos informations.'
+          });
+        }
       }
     } else {
       try {
         const contactResult: any = JSON.parse(contactResponseText);
         contactAdded = true;
         contactId = contactResult.id;
-        console.log(`✓✓✓ Contact created successfully: ID ${contactId}`);
       } catch (parseError) {
-        console.error(`✗ Error parsing contact creation response:`, parseError);
+        // Ignorer les erreurs de parsing
       }
     }
 
@@ -321,18 +291,22 @@ export default async function handler(
         if (getContactResponse.ok) {
           const contactData: any = await getContactResponse.json();
           contactId = contactData.id;
-          console.log(`✓ Contact ID retrieved via GET: ${contactId}`);
         }
       } catch (getError) {
-        console.error(`✗ Error retrieving contact ID:`, getError);
+        // Ignorer les erreurs
       }
     }
 
     if (!contactId) {
-      console.error(`✗✗✗ CRITICAL: No contactId available, cannot proceed with company linking`);
+      // Si la création du contact a vraiment échoué (pas juste un duplicate), renvoyer une erreur
+      if (!contactAdded) {
+        return response.status(400).json({ 
+          error: 'Échec de l\'enregistrement du contact',
+          details: 'Impossible d\'enregistrer votre contact. Veuillez vérifier vos informations et réessayer.'
+        });
+      }
     }
 
-    console.log(`\n=== STEP 2: CREATE COMPANY ===`);
     let companyId: string | null = null;
     
     if (contactId) {
@@ -340,8 +314,6 @@ export default async function handler(
         name: startupName,
         attributes: {},
       };
-
-      console.log(`Creating company with payload:`, JSON.stringify(createCompanyPayload, null, 2));
 
       const createCompanyResponse = await fetch('https://api.brevo.com/v3/companies', {
         method: 'POST',
@@ -353,23 +325,16 @@ export default async function handler(
         body: JSON.stringify(createCompanyPayload),
       });
 
-      const companyResponseStatus = createCompanyResponse.status;
       const companyResponseText = await createCompanyResponse.text();
-      
-      console.log(`Company creation response status: ${companyResponseStatus}`);
-      console.log(`Company creation response body: ${companyResponseText}`);
 
       if (createCompanyResponse.ok) {
         try {
           const newCompany: any = JSON.parse(companyResponseText);
           companyId = newCompany.id;
-          console.log(`✓✓✓ Company created successfully: ID ${companyId}`);
         } catch (parseError) {
-          console.error(`✗ Error parsing company creation response:`, parseError);
+          // Ignorer les erreurs de parsing
         }
       } else {
-        console.log(`⚠ Company creation failed, searching for existing company...`);
-        
         // Rechercher l'entreprise existante
         let found = false;
         let offset = 0;
@@ -394,7 +359,6 @@ export default async function handler(
             );
             if (foundCompany) {
               companyId = foundCompany.id;
-              console.log(`✓ Company found: ID ${companyId}`);
               found = true;
               break;
             }
@@ -405,36 +369,22 @@ export default async function handler(
             
             offset += limit;
           } else {
-            const searchError = await searchResponse.text();
-            console.error(`✗ Error searching for company: ${searchError}`);
             break;
           }
         }
-        
-        if (!found) {
-          console.warn(`⚠ Company not found: ${startupName}`);
-        }
       }
-    } else {
-      console.warn(`⚠ Skipping company creation: no contactId available`);
     }
 
-    console.log(`\n=== STEP 3: LINK CONTACT TO COMPANY ===`);
     if (companyId && contactId) {
       const contactIdNum =
         typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
       
-      if (isNaN(contactIdNum)) {
-        console.error(`✗✗✗ Invalid contactId: ${contactId} (not a number)`);
-      } else {
+      if (!isNaN(contactIdNum)) {
         const patchPayload: BrevoLinkCompanyPayload = {
           linkContactIds: [contactIdNum],
         };
-        
-        console.log(`Patching company (link-unlink) ${companyId} with payload:`, JSON.stringify(patchPayload, null, 2));
-        console.log(`URL: https://api.brevo.com/v3/companies/link-unlink/${companyId}`);
 
-        const patchCompanyResponse = await fetch(
+        await fetch(
           `https://api.brevo.com/v3/companies/link-unlink/${companyId}`,
           {
             method: 'PATCH',
@@ -446,41 +396,8 @@ export default async function handler(
             body: JSON.stringify(patchPayload),
           }
         );
-
-        const patchStatus = patchCompanyResponse.status;
-        const patchText = await patchCompanyResponse.text();
-        
-        console.log(`PATCH (link-unlink) response status: ${patchStatus}`);
-        console.log(`PATCH (link-unlink) response body: ${patchText}`);
-
-        if (patchCompanyResponse.ok) {
-          console.log(`✓✓✓ SUCCESS: Contact ${contactIdNum} linked to company ${companyId}`);
-        } else {
-          try {
-            const errorData = JSON.parse(patchText);
-            console.error(`✗✗✗ FAILED to link contact to company:`);
-            console.error(`  Status: ${patchStatus}`);
-            console.error(`  Error code: ${errorData.code}`);
-            console.error(`  Error message: ${errorData.message}`);
-          } catch (parseError) {
-            console.error(`✗✗✗ FAILED to link contact to company (non-JSON):`);
-            console.error(`  Status: ${patchStatus}`);
-            console.error(`  Response: ${patchText}`);
-          }
-        }
-      }
-    } else {
-      if (!companyId) {
-        console.warn(`⚠ Cannot link: companyId is null`);
-      }
-      if (!contactId) {
-        console.warn(`⚠ Cannot link: contactId is null`);
       }
     }
-
-    console.log(`\n=== STEP 4: SEND THANK YOU EMAIL ===`);
-    console.log(`Preparing email to: ${formData.contact_email}`);
-    console.log(`Sender: ${brevoSenderName} <${brevoSenderEmail}>`);
 
     const contactFullName = `${firstName} ${lastName}`.trim();
     const thankYouEmailContent = `
@@ -510,11 +427,6 @@ export default async function handler(
       htmlContent: thankYouEmailContent,
     };
 
-    console.log(`Email payload:`, JSON.stringify({
-      ...thankYouEmailPayload,
-      htmlContent: '[HTML content]',
-    }, null, 2));
-
     const emailResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -525,16 +437,9 @@ export default async function handler(
       body: JSON.stringify(thankYouEmailPayload),
     });
 
-    const emailStatus = emailResponse.status;
     const emailText = await emailResponse.text();
-    
-    console.log(`Email response status: ${emailStatus}`);
-    console.log(`Email response body: ${emailText}`);
 
     if (!emailResponse.ok) {
-      console.error(`✗✗✗ FAILED to send thank you email:`);
-      console.error(`  Status: ${emailStatus}`);
-      console.error(`  Response: ${emailText}`);
       return response.status(500).json({ 
         error: 'Failed to send thank you email',
         details: emailText 
@@ -543,11 +448,6 @@ export default async function handler(
 
     try {
       const emailResult: any = JSON.parse(emailText);
-      console.log(`✓✓✓ SUCCESS: Thank you email sent`);
-      console.log(`  Message ID: ${emailResult.messageId}`);
-      console.log(`  To: ${formData.contact_email}`);
-
-      console.log(`\n=== CONTACT FORM HANDLER END ===`);
       return response.status(200).json({ 
         success: true,
         messageId: emailResult.messageId,
@@ -557,10 +457,6 @@ export default async function handler(
         companyLinked: companyId && contactId ? true : false,
       });
     } catch (parseError) {
-      console.error(`✗ Error parsing email response:`, parseError);
-      console.log(`Email response text: ${emailText}`);
-      
-      console.log(`\n=== CONTACT FORM HANDLER END ===`);
       return response.status(200).json({ 
         success: true,
         contactAdded: contactAdded,
@@ -571,9 +467,7 @@ export default async function handler(
     }
 
   } catch (error) {
-    console.error(`\n✗✗✗ UNEXPECTED ERROR:`, error);
-    console.error(`Error stack:`, error instanceof Error ? error.stack : 'No stack trace');
-    console.log(`\n=== CONTACT FORM HANDLER END (ERROR) ===`);
+    console.error('✗ Unexpected error:', error instanceof Error ? error.message : 'Unknown error');
     return response.status(500).json({ 
       error: 'Internal server error',
       details: error instanceof Error ? error.message : 'Unknown error'
