@@ -9,6 +9,13 @@ interface ContactFormData {
   message?: string;
 }
 
+interface BrevoLinkCompanyPayload {
+  linkContactIds?: number[];
+  unlinkContactIds?: number[];
+  linkDealIds?: string[];
+  unlinkDealIds?: string[];
+}
+
 export default async function handler(
   request: VercelRequest,
   response: VercelResponse,
@@ -98,7 +105,7 @@ export default async function handler(
     const addContactResponse = await fetch('https://api.brevo.com/v3/contacts', {
       method: 'POST',
       headers: {
-        'accept': 'application/json',
+        accept: 'application/json',
         'api-key': brevoApiKey,
         'content-type': 'application/json',
       },
@@ -124,14 +131,14 @@ export default async function handler(
             {
               method: 'GET',
               headers: {
-                'accept': 'application/json',
+                accept: 'application/json',
                 'api-key': brevoApiKey,
               },
             }
           );
           
           if (getContactResponse.ok) {
-            const contactData = await getContactResponse.json();
+            const contactData: any = await getContactResponse.json();
             contactId = contactData.id;
             console.log(`✓ Contact ID retrieved: ${contactId}`);
             
@@ -142,7 +149,7 @@ export default async function handler(
               {
                 method: 'PUT',
                 headers: {
-                  'accept': 'application/json',
+                  accept: 'application/json',
                   'api-key': brevoApiKey,
                   'content-type': 'application/json',
                 },
@@ -167,7 +174,7 @@ export default async function handler(
       }
     } else {
       try {
-        const contactResult = JSON.parse(contactResponseText);
+        const contactResult: any = JSON.parse(contactResponseText);
         contactAdded = true;
         contactId = contactResult.id;
         console.log(`✓✓✓ Contact created successfully: ID ${contactId}`);
@@ -184,14 +191,14 @@ export default async function handler(
           {
             method: 'GET',
             headers: {
-              'accept': 'application/json',
+              accept: 'application/json',
               'api-key': brevoApiKey,
             },
           }
         );
         
         if (getContactResponse.ok) {
-          const contactData = await getContactResponse.json();
+          const contactData: any = await getContactResponse.json();
           contactId = contactData.id;
           console.log(`✓ Contact ID retrieved via GET: ${contactId}`);
         }
@@ -218,7 +225,7 @@ export default async function handler(
       const createCompanyResponse = await fetch('https://api.brevo.com/v3/companies', {
         method: 'POST',
         headers: {
-          'accept': 'application/json',
+          accept: 'application/json',
           'api-key': brevoApiKey,
           'content-type': 'application/json',
         },
@@ -233,7 +240,7 @@ export default async function handler(
 
       if (createCompanyResponse.ok) {
         try {
-          const newCompany = JSON.parse(companyResponseText);
+          const newCompany: any = JSON.parse(companyResponseText);
           companyId = newCompany.id;
           console.log(`✓✓✓ Company created successfully: ID ${companyId}`);
         } catch (parseError) {
@@ -253,14 +260,14 @@ export default async function handler(
             {
               method: 'GET',
               headers: {
-                'accept': 'application/json',
+                accept: 'application/json',
                 'api-key': brevoApiKey,
               },
             }
           );
 
           if (searchResponse.ok) {
-            const searchData = await searchResponse.json();
+            const searchData: any = await searchResponse.json();
             const foundCompany = searchData.companies?.find(
               (c: any) => c.name?.toLowerCase() === startupName.toLowerCase()
             );
@@ -293,24 +300,25 @@ export default async function handler(
 
     console.log(`\n=== STEP 3: LINK CONTACT TO COMPANY ===`);
     if (companyId && contactId) {
-      const contactIdNum = typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
+      const contactIdNum =
+        typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
       
       if (isNaN(contactIdNum)) {
         console.error(`✗✗✗ Invalid contactId: ${contactId} (not a number)`);
       } else {
-        const patchPayload = {
+        const patchPayload: BrevoLinkCompanyPayload = {
           linkContactIds: [contactIdNum],
         };
         
-        console.log(`Patching company ${companyId} with payload:`, JSON.stringify(patchPayload, null, 2));
-        console.log(`URL: https://api.brevo.com/v3/companies/${companyId}`);
+        console.log(`Patching company (link-unlink) ${companyId} with payload:`, JSON.stringify(patchPayload, null, 2));
+        console.log(`URL: https://api.brevo.com/v3/companies/link-unlink/${companyId}`);
 
         const patchCompanyResponse = await fetch(
-          `https://api.brevo.com/v3/companies/${companyId}`,
+          `https://api.brevo.com/v3/companies/link-unlink/${companyId}`,
           {
             method: 'PATCH',
             headers: {
-              'accept': 'application/json',
+              accept: 'application/json',
               'api-key': brevoApiKey,
               'content-type': 'application/json',
             },
@@ -321,8 +329,8 @@ export default async function handler(
         const patchStatus = patchCompanyResponse.status;
         const patchText = await patchCompanyResponse.text();
         
-        console.log(`PATCH response status: ${patchStatus}`);
-        console.log(`PATCH response body: ${patchText}`);
+        console.log(`PATCH (link-unlink) response status: ${patchStatus}`);
+        console.log(`PATCH (link-unlink) response body: ${patchText}`);
 
         if (patchCompanyResponse.ok) {
           console.log(`✓✓✓ SUCCESS: Contact ${contactIdNum} linked to company ${companyId}`);
@@ -389,7 +397,7 @@ export default async function handler(
     const emailResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
-        'accept': 'application/json',
+        accept: 'application/json',
         'api-key': brevoApiKey,
         'content-type': 'application/json',
       },
@@ -413,7 +421,7 @@ export default async function handler(
     }
 
     try {
-      const emailResult = JSON.parse(emailText);
+      const emailResult: any = JSON.parse(emailText);
       console.log(`✓✓✓ SUCCESS: Thank you email sent`);
       console.log(`  Message ID: ${emailResult.messageId}`);
       console.log(`  To: ${formData.contact_email}`);
