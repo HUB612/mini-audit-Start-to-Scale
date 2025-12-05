@@ -126,4 +126,25 @@ impl Survey {
             total_questions: self.questions.len(),
         }
     }
+
+    pub fn get_all_questions_with_answers(&self) -> Vec<QuestionData> {
+        let answers = self.answers.borrow();
+        let mut result = Vec::new();
+
+        for question in &self.questions {
+            let answer = answers.get(&question.id).map(|a| match a {
+                Answer::Oui => "oui".to_string(),
+                Answer::Non => "non".to_string(),
+                Answer::JeNeSaisPas => "je-ne-sais-pas".to_string(),
+            });
+
+            result.push(QuestionData {
+                question: question.clone(),
+                thematic: question.thematic.clone(),
+                answer,
+            });
+        }
+
+        result
+    }
 }

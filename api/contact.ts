@@ -1,5 +1,16 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 
+interface QuestionData {
+  question: {
+    id: string;
+    text: string;
+    description?: string;
+    thematic: string;
+  };
+  thematic: string;
+  answer?: string;
+}
+
 interface ContactFormData {
   startup_name: string;
   contact_firstname: string;
@@ -7,6 +18,8 @@ interface ContactFormData {
   contact_email: string;
   contact_phone?: string;
   message?: string;
+  questions?: QuestionData[];
+  scores?: { [key: string]: number };
 }
 
 interface BrevoLinkCompanyPayload {
@@ -399,6 +412,11 @@ export default async function handler(
       }
     }
 
+    // Créer une note dans Brevo avec les résultats du questionnaire
+    if (contactId && formData.questions && formData.scores) {
+      await createBrevoNote(brevoApiKey, contactId, formData, startupName);
+    }
+
     const contactFullName = `${firstName} ${lastName}`.trim();
     const thankYouEmailContent = `
       <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
@@ -513,4 +531,96 @@ function escapeHtml(text: string): string {
     "'": '&#039;',
   };
   return text.replace(/[&<>"']/g, (m) => map[m]);
+}
+
+async function createBrevoNote(
+  apiKey: string,
+  contactId: number,
+  formData: ContactFormData,
+  startupName: string
+): Promise<void> {
+  try {
+    // Grouper les questions par thématique
+    const questionsByThematic: { [key: string]: QuestionData[] } = {};
+    if (formData.questions) {
+      for (const q of formData.questions) {
+        if (!questionsByThematic[q.thematic]) {
+          questionsByThematic[q.thematic] = [];
+        }
+        questionsByThematic[q.thematic].push(q);
+      }
+    }
+
+    // Construire le contenu de la note
+    let noteContent = `# Résultats du questionnaire Start to Scale\n\n`;
+    noteContent += `**Startup:** ${escapeHtml(startupName)}\n\n`;
+
+    // Ajouter les scores par thématique
+    if (formData.scores && Object.keys(formData.scores).length > 0) {
+      noteContent += `## Scores par thématique\n\n`;
+      const sortedThematics = Object.keys(formData.scores).sort();
+      for (const thematic of sortedThematics) {
+        const score = formData.scores[thematic];
+        const percentage = Math.round(score);
+        noteContent += `- **${escapeHtml(thematic)}:** ${percentage}%\n`;
+      }
+      noteContent += `\n`;
+    }
+
+    // Ajouter les questions avec réponses par thématique
+    if (Object.keys(questionsByThematic).length > 0) {
+      noteContent += `## Questions et réponses\n\n`;
+      const sortedThematics = Object.keys(questionsByThematic).sort();
+      
+      for (const thematic of sortedThematics) {
+        const questions = questionsByThematic[thematic];
+        noteContent += `### ${escapeHtml(thematic)}\n\n`;
+        
+        for (const qData of questions) {
+          noteContent += `**Q:** ${escapeHtml(qData.question.text)}\n`;
+          if (qData.question.description) {
+            noteContent += `*${escapeHtml(qData.question.description)}*\n`;
+          }
+          
+          if (qData.answer) {
+            const answerText = qData.answer === 'oui' ? 'Oui' : 
+                              qData.answer === 'non' ? 'Non' : 
+                              'Je ne sais pas';
+            noteContent += `**R:** ${answerText}\n`;
+          } else {
+            noteContent += `**R:** Non répondu\n`;
+          }
+          noteContent += `\n`;
+        }
+      }
+    }
+
+    // Ajouter le message du formulaire s'il existe
+    if (formData.message && formData.message.trim()) {
+      noteContent += `## Message du formulaire\n\n${escapeHtml(formData.message)}\n`;
+    }
+
+    // Créer la note dans Brevo
+    const notePayload = {
+      text: noteContent,
+      contactIds: [contactId],
+    };
+
+    const noteResponse = await fetch('https://api.brevo.com/v3/crm/notes', {
+      method: 'POST',
+      headers: {
+        accept: 'application/json',
+        'api-key': apiKey,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(notePayload),
+    });
+
+    if (!noteResponse.ok) {
+      const errorText = await noteResponse.text();
+      console.error('✗ Failed to create note:', errorText);
+    }
+  } catch (error) {
+    console.error('✗ Error creating note:', error instanceof Error ? error.message : 'Unknown error');
+  }
 }

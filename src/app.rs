@@ -119,9 +119,25 @@ impl Component for App {
                 self.form_error = None;
 
                 let form_data = self.form_data.clone();
+                let survey = self.survey.clone();
+                let results = self.results.clone();
                 let link = ctx.link().clone();
 
                 spawn_local(async move {
+                    // Préparer les questions avec réponses
+                    let questions_with_answers = if let Some(ref survey) = survey {
+                        survey.get_all_questions_with_answers()
+                    } else {
+                        Vec::new()
+                    };
+
+                    // Préparer les résultats (scores par thématique)
+                    let scores = if let Some(ref results) = results {
+                        results.scores.clone()
+                    } else {
+                        std::collections::HashMap::new()
+                    };
+
                     let json_data = serde_json::json!({
                         "startup_name": form_data.startup_name,
                         "contact_firstname": form_data.contact_firstname,
@@ -129,6 +145,8 @@ impl Component for App {
                         "contact_email": form_data.contact_email,
                         "contact_phone": form_data.contact_phone,
                         "message": form_data.message,
+                        "questions": questions_with_answers,
+                        "scores": scores,
                     });
 
                     let json_string = json_data.to_string();
@@ -184,13 +202,26 @@ impl Component for App {
                                             .await
                                         {
                                             Ok(text) => {
-                                                let text_str = text.as_string().unwrap_or_else(|| "Erreur inconnue".to_string());
-                                                
+                                                let text_str =
+                                                    text.as_string().unwrap_or_else(|| {
+                                                        "Erreur inconnue".to_string()
+                                                    });
+
                                                 // Essayer de parser le JSON pour extraire le message d'erreur
-                                                if let Ok(json_value) = serde_json::from_str::<serde_json::Value>(&text_str) {
-                                                    if let Some(error_msg) = json_value.get("error").and_then(|v| v.as_str()) {
+                                                if let Ok(json_value) =
+                                                    serde_json::from_str::<serde_json::Value>(
+                                                        &text_str,
+                                                    )
+                                                {
+                                                    if let Some(error_msg) = json_value
+                                                        .get("error")
+                                                        .and_then(|v| v.as_str())
+                                                    {
                                                         // Si un message de détail est disponible, l'ajouter
-                                                        if let Some(details) = json_value.get("details").and_then(|v| v.as_str()) {
+                                                        if let Some(details) = json_value
+                                                            .get("details")
+                                                            .and_then(|v| v.as_str())
+                                                        {
                                                             format!("{} ({})", error_msg, details)
                                                         } else {
                                                             error_msg.to_string()
@@ -201,7 +232,7 @@ impl Component for App {
                                                 } else {
                                                     text_str
                                                 }
-                                            },
+                                            }
                                             Err(_) => "Erreur lors de la lecture de la réponse"
                                                 .to_string(),
                                         }
@@ -442,7 +473,11 @@ impl App {
         // Validation supplémentaire : si le numéro commence par 0, il doit avoir 10 chiffres (format français)
         // Si le numéro commence par +, il doit avoir au moins 4 caractères après le +
         if phone.starts_with('+') {
-            let after_plus: String = phone.chars().skip(1).filter(|c| c.is_ascii_digit()).collect();
+            let after_plus: String = phone
+                .chars()
+                .skip(1)
+                .filter(|c| c.is_ascii_digit())
+                .collect();
             if after_plus.len() < 4 {
                 return false;
             }
