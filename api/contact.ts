@@ -49,11 +49,24 @@ export default async function handler(
   }
 
   try {
+    console.log('📥 [CONTACT] Début du traitement de la requête');
+    
     // Récupérer les données du formulaire
     const formData: ContactFormData = request.body;
+    console.log('📋 [CONTACT] Données reçues:', {
+      startup_name: formData.startup_name,
+      contact_email: formData.contact_email,
+      contact_firstname: formData.contact_firstname,
+      contact_lastname: formData.contact_lastname,
+      has_questions: !!formData.questions,
+      questions_count: formData.questions?.length || 0,
+      has_scores: !!formData.scores,
+      scores_count: formData.scores ? Object.keys(formData.scores).length : 0,
+    });
 
     // Valider les champs requis
     if (!formData.startup_name || !formData.contact_firstname || !formData.contact_lastname || !formData.contact_email) {
+      console.error('✗ [CONTACT] Champs requis manquants');
       return response.status(400).json({ 
         error: 'Missing required fields: startup_name, contact_firstname, contact_lastname, contact_email' 
       });
@@ -68,10 +81,8 @@ export default async function handler(
 
     // Préparer les attributs du contact
     const contactAttributes: any = {
-      FIRSTNAME: firstName,
-      LASTNAME: lastName,
-      STARTUP: startupName,
-      MESSAGE: formData.message || '',
+      PRENOM: firstName,
+      NOM: lastName,
     };
     
     if (cleanedPhone) {
@@ -89,6 +100,9 @@ export default async function handler(
     let contactId: number | null = null;
     let contactAdded = false;
 
+    console.log('👤 [CONTACT] Création/mise à jour du contact dans Brevo...');
+    console.log('📤 [CONTACT] Payload envoyé:', JSON.stringify(contactPayload, null, 2));
+    
     const addContactResponse = await fetch('https://api.brevo.com/v3/contacts', {
       method: 'POST',
       headers: {
@@ -101,6 +115,8 @@ export default async function handler(
 
     const contactResponseStatus = addContactResponse.status;
     const contactResponseText = await addContactResponse.text();
+    console.log(`📥 [CONTACT] Réponse Brevo - Status: ${contactResponseStatus}`);
+    console.log('📥 [CONTACT] Réponse Brevo - Body:', contactResponseText);
 
     if (!addContactResponse.ok) {
       try {
@@ -145,10 +161,23 @@ export default async function handler(
           if (getContactResponse.ok) {
             const contactData: any = await getContactResponse.json();
             contactId = contactData.id;
+            console.log(`✅ [CONTACT] Contact existant trouvé - ID: ${contactId}`);
+            console.log('📋 [CONTACT] Données actuelles du contact:', {
+              email: contactData.email,
+              firstName: contactData.attributes?.FIRSTNAME || contactData.attributes?.PRENOM,
+              lastName: contactData.attributes?.LASTNAME || contactData.attributes?.NOM,
+            });
             
             // Préparer les attributs à mettre à jour
-            // Si le SMS cause un conflit, ne pas l'inclure dans la mise à jour
-            const updateAttributes = { ...contactAttributes };
+            // S'assurer que FIRSTNAME/LASTNAME et PRENOM/NOM sont toujours inclus
+            const updateAttributes = { 
+              PRENOM: firstName,
+              NOM: lastName,
+            };
+            if (cleanedPhone && (!isSmsConflict || isEmailConflict)) {
+              updateAttributes.SMS = cleanedPhone;
+              updateAttributes.TELEPHONE = cleanedPhone;
+            }
             if (isSmsConflict && !isEmailConflict) {
               delete updateAttributes.SMS;
               delete updateAttributes.TELEPHONE;
@@ -156,7 +185,10 @@ export default async function handler(
             
             // Mettre à jour les attributs
             const updatePayload = { attributes: updateAttributes };
-            await fetch(
+            console.log('🔄 [CONTACT] Mise à jour du contact existant...');
+            console.log('📤 [CONTACT] Payload de mise à jour:', JSON.stringify(updatePayload, null, 2));
+            
+            const updateResponse = await fetch(
               `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
               {
                 method: 'PUT',
@@ -168,6 +200,17 @@ export default async function handler(
                 body: JSON.stringify(updatePayload),
               }
             );
+            
+            const updateResponseStatus = updateResponse.status;
+            const updateResponseText = await updateResponse.text();
+            console.log(`📥 [CONTACT] Réponse mise à jour - Status: ${updateResponseStatus}`);
+            console.log('📥 [CONTACT] Réponse mise à jour - Body:', updateResponseText);
+            
+            if (!updateResponse.ok) {
+              console.error('✗ [CONTACT] Échec de la mise à jour du contact');
+            } else {
+              console.log('✅ [CONTACT] Contact mis à jour avec succès');
+            }
           } else {
             // Si la récupération par email a échoué
             if (isSmsConflict && !isEmailConflict) {
@@ -175,10 +218,8 @@ export default async function handler(
               const contactPayloadWithoutSms: any = {
                 email: formData.contact_email,
                 attributes: {
-                  FIRSTNAME: firstName,
-                  LASTNAME: lastName,
-                  STARTUP: startupName,
-                  MESSAGE: formData.message || '',
+                  PRENOM: firstName,
+                  NOM: lastName,
                 },
                 listIds: [parseInt(brevoListId, 10)],
                 updateEnabled: true,
@@ -224,14 +265,15 @@ export default async function handler(
                       
                       // Mettre à jour les attributs sans SMS
                       const updateAttributes = {
-                        FIRSTNAME: firstName,
-                        LASTNAME: lastName,
-                        STARTUP: startupName,
-                        MESSAGE: formData.message || '',
+                        PRENOM: firstName,
+                        NOM: lastName,
                       };
                       
                       const updatePayload = { attributes: updateAttributes };
-                      await fetch(
+                      console.log('🔄 [CONTACT] Mise à jour finale du contact...');
+                      console.log('📤 [CONTACT] Payload de mise à jour:', JSON.stringify(updatePayload, null, 2));
+                      
+                      const finalUpdateResponse = await fetch(
                         `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
                         {
                           method: 'PUT',
@@ -243,6 +285,11 @@ export default async function handler(
                           body: JSON.stringify(updatePayload),
                         }
                       );
+                      
+                      const finalUpdateStatus = finalUpdateResponse.status;
+                      const finalUpdateText = await finalUpdateResponse.text();
+                      console.log(`📥 [CONTACT] Réponse mise à jour finale - Status: ${finalUpdateStatus}`);
+                      console.log('📥 [CONTACT] Réponse mise à jour finale - Body:', finalUpdateText);
                     }
                   }
                 } catch (parseRetryError) {
@@ -282,13 +329,57 @@ export default async function handler(
         const contactResult: any = JSON.parse(contactResponseText);
         contactAdded = true;
         contactId = contactResult.id;
+        console.log(`✅ [CONTACT] Contact créé avec succès - ID: ${contactId}`);
+        
+        // Vérifier que le contact a bien été créé avec les bons attributs
+        console.log('🔍 [CONTACT] Vérification des attributs du contact créé...');
+        const verifyResponse = await fetch(
+          `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+          {
+            method: 'GET',
+            headers: {
+              accept: 'application/json',
+              'api-key': brevoApiKey,
+            },
+          }
+        );
+        
+        if (verifyResponse.ok) {
+          const verifyData: any = await verifyResponse.json();
+          console.log('📋 [CONTACT] Attributs vérifiés:', {
+            email: verifyData.email,
+            firstName: verifyData.attributes?.FIRSTNAME || verifyData.attributes?.PRENOM || 'NON DÉFINI',
+            lastName: verifyData.attributes?.LASTNAME || verifyData.attributes?.NOM || 'NON DÉFINI',
+            startup: verifyData.attributes?.STARTUP || 'NON DÉFINI',
+          });
+          
+          // Si FIRSTNAME ou LASTNAME ne sont pas présents, essayer de les mettre à jour
+          if (!verifyData.attributes?.FIRSTNAME && !verifyData.attributes?.PRENOM) {
+            console.warn('⚠️ [CONTACT] FIRSTNAME manquant, tentative de mise à jour...');
+            const fixAttributes = { FIRSTNAME: firstName, LASTNAME: lastName };
+            await fetch(
+              `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+              {
+                method: 'PUT',
+                headers: {
+                  accept: 'application/json',
+                  'api-key': brevoApiKey,
+                  'content-type': 'application/json',
+                },
+                body: JSON.stringify({ attributes: fixAttributes }),
+              }
+            );
+          }
+        }
       } catch (parseError) {
+        console.error('✗ [CONTACT] Erreur lors du parsing de la réponse:', parseError);
         // Ignorer les erreurs de parsing
       }
     }
 
     // Récupérer contactId si nécessaire
     if (!contactId && contactAdded) {
+      console.log('🔍 [CONTACT] Récupération du contactId par email...');
       try {
         const getContactResponse = await fetch(
           `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
@@ -304,13 +395,18 @@ export default async function handler(
         if (getContactResponse.ok) {
           const contactData: any = await getContactResponse.json();
           contactId = contactData.id;
+          console.log(`✅ [CONTACT] ContactId récupéré: ${contactId}`);
+        } else {
+          console.error(`✗ [CONTACT] Échec de la récupération du contact - Status: ${getContactResponse.status}`);
         }
       } catch (getError) {
+        console.error('✗ [CONTACT] Erreur lors de la récupération du contact:', getError);
         // Ignorer les erreurs
       }
     }
 
     if (!contactId) {
+      console.error('✗ [CONTACT] Aucun contactId disponible');
       // Si la création du contact a vraiment échoué (pas juste un duplicate), renvoyer une erreur
       if (!contactAdded) {
         return response.status(400).json({ 
@@ -323,6 +419,7 @@ export default async function handler(
     let companyId: string | null = null;
     
     if (contactId) {
+      console.log('🏢 [COMPANY] Création/recherche de l\'entreprise...');
       const createCompanyPayload = {
         name: startupName,
         attributes: {},
@@ -339,15 +436,19 @@ export default async function handler(
       });
 
       const companyResponseText = await createCompanyResponse.text();
+      console.log(`📥 [COMPANY] Réponse Brevo - Status: ${createCompanyResponse.status}`);
 
       if (createCompanyResponse.ok) {
         try {
           const newCompany: any = JSON.parse(companyResponseText);
           companyId = newCompany.id;
+          console.log(`✅ [COMPANY] Entreprise créée avec succès - ID: ${companyId}`);
         } catch (parseError) {
+          console.error('✗ [COMPANY] Erreur lors du parsing de la réponse:', parseError);
           // Ignorer les erreurs de parsing
         }
       } else {
+        console.log('🔍 [COMPANY] Entreprise existante, recherche en cours...');
         // Rechercher l'entreprise existante
         let found = false;
         let offset = 0;
@@ -373,6 +474,7 @@ export default async function handler(
             if (foundCompany) {
               companyId = foundCompany.id;
               found = true;
+              console.log(`✅ [COMPANY] Entreprise trouvée - ID: ${companyId}`);
               break;
             }
             
@@ -389,6 +491,7 @@ export default async function handler(
     }
 
     if (companyId && contactId) {
+      console.log(`🔗 [LINK] Liaison contact (${contactId}) <-> entreprise (${companyId})...`);
       const contactIdNum =
         typeof contactId === 'number' ? contactId : parseInt(String(contactId), 10);
       
@@ -397,7 +500,7 @@ export default async function handler(
           linkContactIds: [contactIdNum],
         };
 
-        await fetch(
+        const linkResponse = await fetch(
           `https://api.brevo.com/v3/companies/link-unlink/${companyId}`,
           {
             method: 'PATCH',
@@ -409,12 +512,34 @@ export default async function handler(
             body: JSON.stringify(patchPayload),
           }
         );
+        
+        if (linkResponse.ok) {
+          console.log(`✅ [LINK] Liaison réussie`);
+        } else {
+          const linkErrorText = await linkResponse.text();
+          console.error(`✗ [LINK] Échec de la liaison - Status: ${linkResponse.status}`, linkErrorText);
+        }
+      } else {
+        console.error(`✗ [LINK] ContactId invalide: ${contactId}`);
       }
+    } else {
+      console.log(`⚠️ [LINK] Liaison impossible - contactId: ${contactId}, companyId: ${companyId}`);
     }
 
     // Créer une note dans Brevo avec les résultats du questionnaire
+    console.log('📝 [NOTE] Vérification des conditions pour créer la note...');
+    console.log('📝 [NOTE] contactId:', contactId);
+    console.log('📝 [NOTE] has_questions:', !!formData.questions);
+    console.log('📝 [NOTE] has_scores:', !!formData.scores);
+    
     if (contactId && formData.questions && formData.scores) {
+      console.log('📝 [NOTE] Conditions remplies, création de la note...');
       await createBrevoNote(brevoApiKey, contactId, formData, startupName);
+    } else {
+      console.warn('⚠️ [NOTE] Conditions non remplies pour créer la note');
+      if (!contactId) console.warn('  - contactId manquant');
+      if (!formData.questions) console.warn('  - questions manquantes');
+      if (!formData.scores) console.warn('  - scores manquants');
     }
 
     const contactFullName = `${firstName} ${lastName}`.trim();
@@ -445,6 +570,8 @@ export default async function handler(
       htmlContent: thankYouEmailContent,
     };
 
+    console.log('📧 [EMAIL] Envoi de l\'email de remerciement...');
+    
     const emailResponse = await fetch('https://api.brevo.com/v3/smtp/email', {
       method: 'POST',
       headers: {
@@ -456,16 +583,29 @@ export default async function handler(
     });
 
     const emailText = await emailResponse.text();
+    console.log(`📥 [EMAIL] Réponse Brevo - Status: ${emailResponse.status}`);
 
     if (!emailResponse.ok) {
+      console.error('✗ [EMAIL] Échec de l\'envoi de l\'email:', emailText);
       return response.status(500).json({ 
         error: 'Failed to send thank you email',
         details: emailText 
       });
+    } else {
+      console.log('✅ [EMAIL] Email envoyé avec succès');
     }
 
     try {
       const emailResult: any = JSON.parse(emailText);
+      console.log('✅ [CONTACT] Traitement terminé avec succès');
+      console.log('📊 [CONTACT] Résumé:', {
+        contactAdded,
+        contactId,
+        companyId,
+        companyLinked: companyId && contactId ? true : false,
+        messageId: emailResult.messageId,
+      });
+      
       return response.status(200).json({ 
         success: true,
         messageId: emailResult.messageId,
@@ -475,6 +615,14 @@ export default async function handler(
         companyLinked: companyId && contactId ? true : false,
       });
     } catch (parseError) {
+      console.log('✅ [CONTACT] Traitement terminé avec succès (réponse email non-JSON)');
+      console.log('📊 [CONTACT] Résumé:', {
+        contactAdded,
+        contactId,
+        companyId,
+        companyLinked: companyId && contactId ? true : false,
+      });
+      
       return response.status(200).json({ 
         success: true,
         contactAdded: contactAdded,
@@ -485,7 +633,8 @@ export default async function handler(
     }
 
   } catch (error) {
-    console.error('✗ Unexpected error:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('✗ [CONTACT] Erreur inattendue:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('✗ [CONTACT] Stack:', error instanceof Error ? error.stack : 'N/A');
     return response.status(500).json({ 
       error: 'Internal server error',
       details: error instanceof Error ? error.message : 'Unknown error'
@@ -539,73 +688,91 @@ async function createBrevoNote(
   formData: ContactFormData,
   startupName: string
 ): Promise<void> {
+  console.log('📝 [NOTE] Début de la création de la note');
+  console.log('📝 [NOTE] Paramètres:', {
+    contactId,
+    startupName,
+    questions_count: formData.questions?.length || 0,
+    scores_count: formData.scores ? Object.keys(formData.scores).length : 0,
+  });
+  
   try {
     // Grouper les questions par thématique
     const questionsByThematic: { [key: string]: QuestionData[] } = {};
     if (formData.questions) {
+      console.log('📝 [NOTE] Groupement des questions par thématique...');
       for (const q of formData.questions) {
         if (!questionsByThematic[q.thematic]) {
           questionsByThematic[q.thematic] = [];
         }
         questionsByThematic[q.thematic].push(q);
       }
+      console.log('📝 [NOTE] Thématiques trouvées:', Object.keys(questionsByThematic));
+    } else {
+      console.warn('⚠️ [NOTE] Aucune question fournie');
     }
 
-    // Construire le contenu de la note
-    let noteContent = `# Résultats du questionnaire Start to Scale\n\n`;
-    noteContent += `**Startup:** ${escapeHtml(startupName)}\n\n`;
+    // Construire le contenu de la note en HTML simple
+    let noteContent = `<b>Résultats du questionnaire Start to Scale</b><br><br>`;
+    noteContent += `<b>Startup:</b> ${escapeHtml(startupName)}<br><br>`;
 
     // Ajouter les scores par thématique
     if (formData.scores && Object.keys(formData.scores).length > 0) {
-      noteContent += `## Scores par thématique\n\n`;
+      noteContent += `<b>Scores par thématique:</b><br>`;
       const sortedThematics = Object.keys(formData.scores).sort();
       for (const thematic of sortedThematics) {
         const score = formData.scores[thematic];
         const percentage = Math.round(score);
-        noteContent += `- **${escapeHtml(thematic)}:** ${percentage}%\n`;
+        noteContent += `- ${escapeHtml(thematic)}: ${percentage}%<br>`;
       }
-      noteContent += `\n`;
+      noteContent += `<br>`;
     }
 
     // Ajouter les questions avec réponses par thématique
     if (Object.keys(questionsByThematic).length > 0) {
-      noteContent += `## Questions et réponses\n\n`;
+      noteContent += `<b>Questions et réponses:</b><br><br>`;
       const sortedThematics = Object.keys(questionsByThematic).sort();
       
       for (const thematic of sortedThematics) {
         const questions = questionsByThematic[thematic];
-        noteContent += `### ${escapeHtml(thematic)}\n\n`;
+        noteContent += `<b>${escapeHtml(thematic)}</b><br>`;
         
         for (const qData of questions) {
-          noteContent += `**Q:** ${escapeHtml(qData.question.text)}\n`;
+          noteContent += `Q: ${escapeHtml(qData.question.text)}<br>`;
           if (qData.question.description) {
-            noteContent += `*${escapeHtml(qData.question.description)}*\n`;
+            noteContent += `<i>${escapeHtml(qData.question.description)}</i><br>`;
           }
           
           if (qData.answer) {
             const answerText = qData.answer === 'oui' ? 'Oui' : 
                               qData.answer === 'non' ? 'Non' : 
                               'Je ne sais pas';
-            noteContent += `**R:** ${answerText}\n`;
+            noteContent += `R: <b>${answerText}</b><br>`;
           } else {
-            noteContent += `**R:** Non répondu\n`;
+            noteContent += `R: Non répondu<br>`;
           }
-          noteContent += `\n`;
+          noteContent += `<br>`;
         }
       }
     }
 
     // Ajouter le message du formulaire s'il existe
     if (formData.message && formData.message.trim()) {
-      noteContent += `## Message du formulaire\n\n${escapeHtml(formData.message)}\n`;
+      noteContent += `<b>Message du formulaire:</b><br>${escapeHtml(formData.message)}`;
     }
 
     // Créer la note dans Brevo
+    console.log('📝 [NOTE] Préparation du payload pour Brevo...');
+    console.log('📝 [NOTE] Longueur du contenu:', noteContent.length, 'caractères');
+    
     const notePayload = {
       text: noteContent,
       contactIds: [contactId],
     };
 
+    console.log('📝 [NOTE] Envoi de la requête à Brevo...');
+    console.log('📝 [NOTE] Payload:', JSON.stringify(notePayload, null, 2));
+    
     const noteResponse = await fetch('https://api.brevo.com/v3/crm/notes', {
       method: 'POST',
       headers: {
@@ -616,11 +783,26 @@ async function createBrevoNote(
       body: JSON.stringify(notePayload),
     });
 
+    const noteResponseStatus = noteResponse.status;
+    const noteResponseText = await noteResponse.text();
+    
+    console.log(`📥 [NOTE] Réponse Brevo - Status: ${noteResponseStatus}`);
+    console.log('📥 [NOTE] Réponse Brevo - Body:', noteResponseText);
+
     if (!noteResponse.ok) {
-      const errorText = await noteResponse.text();
-      console.error('✗ Failed to create note:', errorText);
+      console.error('✗ [NOTE] Échec de la création de la note');
+      console.error('✗ [NOTE] Status:', noteResponseStatus);
+      console.error('✗ [NOTE] Erreur:', noteResponseText);
+    } else {
+      try {
+        const noteResult = JSON.parse(noteResponseText);
+        console.log('✅ [NOTE] Note créée avec succès:', noteResult);
+      } catch (parseError) {
+        console.log('✅ [NOTE] Note créée avec succès (réponse non-JSON)');
+      }
     }
   } catch (error) {
-    console.error('✗ Error creating note:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('✗ [NOTE] Erreur lors de la création de la note:', error instanceof Error ? error.message : 'Unknown error');
+    console.error('✗ [NOTE] Stack:', error instanceof Error ? error.stack : 'N/A');
   }
 }
