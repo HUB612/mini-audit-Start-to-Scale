@@ -126,7 +126,14 @@ export default async function handler(
           console.log('⚠ Contact already exists, retrieving ID...');
           contactAdded = true;
           
-          const getContactResponse = await fetch(
+          // Vérifier si c'est le SMS qui cause le conflit
+          const isSmsConflict = errorData.metadata?.duplicate_identifiers?.includes('SMS');
+          const isEmailConflict = errorData.metadata?.duplicate_identifiers?.includes('email');
+          
+          console.log(`Conflict detected - SMS: ${isSmsConflict}, Email: ${isEmailConflict}`);
+          
+          // Essayer d'abord de récupérer par email
+          let getContactResponse = await fetch(
             `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
             {
               method: 'GET',
@@ -140,10 +147,19 @@ export default async function handler(
           if (getContactResponse.ok) {
             const contactData: any = await getContactResponse.json();
             contactId = contactData.id;
-            console.log(`✓ Contact ID retrieved: ${contactId}`);
+            console.log(`✓ Contact ID retrieved by email: ${contactId}`);
+            
+            // Préparer les attributs à mettre à jour
+            // Si le SMS cause un conflit, ne pas l'inclure dans la mise à jour
+            const updateAttributes = { ...contactAttributes };
+            if (isSmsConflict && !isEmailConflict) {
+              console.log(`⚠ SMS conflict detected, updating without SMS attribute`);
+              delete updateAttributes.SMS;
+              delete updateAttributes.TELEPHONE;
+            }
             
             // Mettre à jour les attributs
-            const updatePayload = { attributes: contactAttributes };
+            const updatePayload = { attributes: updateAttributes };
             const updateResponse = await fetch(
               `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
               {
@@ -164,7 +180,112 @@ export default async function handler(
               console.error(`✗ Error updating contact: ${updateError}`);
             }
           } else {
-            console.error(`✗ Failed to retrieve existing contact`);
+            // Si la récupération par email a échoué
+            if (isSmsConflict && !isEmailConflict) {
+              // Le SMS est déjà associé à un autre contact, créer sans SMS
+              console.log(`⚠ SMS conflict: phone number already associated with another contact`);
+              console.log(`Creating contact without SMS attribute...`);
+              
+              // Créer le contact sans le SMS
+              const contactPayloadWithoutSms: any = {
+                email: formData.contact_email,
+                attributes: {
+                  FIRSTNAME: firstName,
+                  LASTNAME: lastName,
+                  STARTUP: startupName,
+                  MESSAGE: formData.message || '',
+                },
+                listIds: [parseInt(brevoListId, 10)],
+                updateEnabled: true,
+              };
+              
+              const retryResponse = await fetch('https://api.brevo.com/v3/contacts', {
+                method: 'POST',
+                headers: {
+                  accept: 'application/json',
+                  'api-key': brevoApiKey,
+                  'content-type': 'application/json',
+                },
+                body: JSON.stringify(contactPayloadWithoutSms),
+              });
+              
+              const retryStatus = retryResponse.status;
+              const retryText = await retryResponse.text();
+              
+              console.log(`Retry (without SMS) response status: ${retryStatus}`);
+              console.log(`Retry (without SMS) response body: ${retryText}`);
+              
+              if (retryResponse.ok) {
+                const retryResult: any = JSON.parse(retryText);
+                contactId = retryResult.id;
+                console.log(`✓ Contact created without SMS: ID ${contactId}`);
+              } else {
+                // Si ça échoue encore, analyser l'erreur
+                try {
+                  const retryErrorData = JSON.parse(retryText);
+                  
+                  // Si c'est encore un duplicate_parameter pour l'email, le contact existe déjà
+                  if (retryErrorData.code === 'duplicate_parameter' && 
+                      retryErrorData.metadata?.duplicate_identifiers?.includes('email')) {
+                    console.log(`⚠ Email also exists, retrieving contact by email...`);
+                    
+                    const finalGetResponse = await fetch(
+                      `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+                      {
+                        method: 'GET',
+                        headers: {
+                          accept: 'application/json',
+                          'api-key': brevoApiKey,
+                        },
+                      }
+                    );
+                    
+                    if (finalGetResponse.ok) {
+                      const finalContactData: any = await finalGetResponse.json();
+                      contactId = finalContactData.id;
+                      console.log(`✓ Contact ID retrieved on final attempt: ${contactId}`);
+                      
+                      // Mettre à jour les attributs sans SMS
+                      const updateAttributes = {
+                        FIRSTNAME: firstName,
+                        LASTNAME: lastName,
+                        STARTUP: startupName,
+                        MESSAGE: formData.message || '',
+                      };
+                      
+                      const updatePayload = { attributes: updateAttributes };
+                      const updateResponse = await fetch(
+                        `https://api.brevo.com/v3/contacts/${encodeURIComponent(formData.contact_email)}`,
+                        {
+                          method: 'PUT',
+                          headers: {
+                            accept: 'application/json',
+                            'api-key': brevoApiKey,
+                            'content-type': 'application/json',
+                          },
+                          body: JSON.stringify(updatePayload),
+                        }
+                      );
+                      
+                      if (updateResponse.ok) {
+                        console.log(`✓ Contact attributes updated (without SMS)`);
+                      } else {
+                        const updateError = await updateResponse.text();
+                        console.error(`✗ Error updating contact: ${updateError}`);
+                      }
+                    } else {
+                      console.error(`✗ Failed to retrieve existing contact after retry`);
+                    }
+                  } else {
+                    console.error(`✗ Retry failed with unexpected error: ${retryText}`);
+                  }
+                } catch (parseRetryError) {
+                  console.error(`✗ Error parsing retry response: ${retryText}`);
+                }
+              }
+            } else {
+              console.error(`✗ Failed to retrieve existing contact`);
+            }
           }
         } else {
           console.error(`✗ Failed to create contact: ${contactResponseText}`);
